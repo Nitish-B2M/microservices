@@ -11,11 +11,12 @@ const (
 
 // *********** General Errors ***********
 const (
-	InternalServerError = "an unexpected error occurred"
-	NotFoundError       = "resource not found"
-	BadRequestError     = "bad request"
-	UnauthorizedError   = "unauthorized access"
-	ForbiddenError      = "access forbidden"
+	InternalServerError  = "an unexpected error occurred"
+	NotFoundError        = "resource not found"
+	BadRequestError      = "bad request"
+	UnauthorizedError    = "unauthorized access"
+	ForbiddenError       = "access forbidden"
+	FailedToSendResponse = "Failed to send response"
 )
 
 // ***********Product***********
@@ -30,6 +31,7 @@ const (
 	InvalidProductRequest        = "Invalid product request"
 	ProductUnexpectedFetchError  = "unexpected error fetching product for update"
 	ProductUnexpectedUpdateError = "unexpected error while fetching product"
+	ProductTagUpdateError        = "error occurred while updating product tags with P_ID %d"
 )
 
 // Info messages
@@ -39,6 +41,15 @@ const (
 	ProductCreatedSuccessfully  = "product created successfully with ID %d"
 	ProductUpdatedSuccessfully  = "product updated successfully with ID %d"
 	ProductDeletedSuccessfully  = "product deleted successfully with ID %d"
+	ProductNotModified          = "No updates required for product with ID %d"
+)
+
+// ************Tag*************
+const (
+	TagCreationFailed = "failed to create tag: %v"
+	TagExistError     = "error checking tag existence: %v"
+	TagNotExist       = "tag not exists, tag name: %v"
+	TagFetchError     = "error while fetching tag"
 )
 
 // Validation error messages
