@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 func JsonResponse(data interface{}, w http.ResponseWriter, message string, status int) {
@@ -12,12 +13,18 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 
 	res, err := json.Marshal(data)
 	if err != nil {
-		LogError("Error marshaling data", map[string]interface{}{"error": err})
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		LogError("error marshaling data", map[string]interface{}{"error": err})
+		http.Error(w, InternalServerError, http.StatusInternalServerError)
 		return
 	}
 
-	LogInfo("Sending response", map[string]interface{}{"response": string(res)})
+	res1 := ""
+	if len(string(res)) > 50 {
+		res1 = strings.TrimSpace(string(res[:100])) + "...."
+	} else {
+		res1 = string(res)
+	}
+	LogInfo("sending response", map[string]interface{}{"response": res1})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -28,8 +35,8 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 	}
 
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		LogError("Error encoding final response", map[string]interface{}{"error": err})
-		http.Error(w, "Failed to send response", http.StatusInternalServerError)
+		LogError("error while encoding final response", map[string]interface{}{"error": err})
+		http.Error(w, FailedToSendResponse, http.StatusInternalServerError)
 	}
 }
 

@@ -35,4 +35,5 @@ func main() {
 
 func InitSchemas() {
 	models.InitProductSchema()
+	models.InitTagSchema()
 }
