@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"fmt"
+	"microservices/pkg/shared/constants"
 	"microservices/pkg/shared/models"
 	"microservices/pkg/shared/payloads"
 	"microservices/pkg/shared/utils"
@@ -13,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type UserService struct {
+type Service struct {
 	DB *gorm.DB
 }
 
@@ -23,6 +24,11 @@ type User interface {
 	DeleteUser(w http.ResponseWriter, r *http.Request)
 	GetAllUsers(w http.ResponseWriter, r *http.Request)
 	FetchUserById(w http.ResponseWriter, r *http.Request)
+	LoginUser(w http.ResponseWriter, r *http.Request)
+	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
+	ResetPassword(w http.ResponseWriter, r *http.Request)
+	SendResetPasswordEmail(w http.ResponseWriter, r *http.Request)
+	VerifyEmail(w http.ResponseWriter, r *http.Request)
 }
 
 func validateAddUserRequest(w http.ResponseWriter, data models.User) bool {
@@ -88,7 +94,7 @@ func trackUpdatedUserFields(oldData payloads.UserResponse, newData models.User) 
 	return updatedFields
 }
 
-func (db *UserService) GetAllUsers(w http.ResponseWriter, r *http.Request) {
+func (db *Service) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodGet); !ok {
 		return
 	}
@@ -110,7 +116,7 @@ func (db *UserService) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(output, w, utils.UsersFetchedSuccessfully, http.StatusOK)
 }
 
-func (db *UserService) FetchUserById(w http.ResponseWriter, r *http.Request) {
+func (db *Service) FetchUserById(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodGet); !ok {
 		return
 	}
@@ -131,7 +137,7 @@ func (db *UserService) FetchUserById(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserFetchedSuccessfully, id), http.StatusOK)
 }
 
-func (db *UserService) AddUser(w http.ResponseWriter, r *http.Request) {
+func (db *Service) AddUser(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
 		return
 	}
@@ -174,7 +180,7 @@ func (db *UserService) AddUser(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserCreatedSuccessfully, id), http.StatusOK)
 }
 
-func (db *UserService) UpdateUser(w http.ResponseWriter, r *http.Request) {
+func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodPut); !ok {
 		return
 	}
@@ -226,7 +232,7 @@ func (db *UserService) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserUpdatedSuccessfully, id), http.StatusOK)
 }
 
-func (db *UserService) DeleteUser(w http.ResponseWriter, r *http.Request) {
+func (db *Service) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodDelete); !ok {
 		return
 	}
@@ -252,7 +258,7 @@ func (db *UserService) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserDeletedSuccessfully, id), http.StatusOK)
 }
 
-func (db *UserService) LoginUser(w http.ResponseWriter, r *http.Request) {
+func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
 		return
 	}
@@ -270,6 +276,11 @@ func (db *UserService) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if ok, err := utils.CompareHashedPassword(user.Password, loginData.Password); !ok {
+		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, err)
+		return
+	}
+  
 	token, err := utils.GenerateJWT(user.ID, user.Email)
 	if err != nil {
 		utils.JsonError(w, utils.TokenGenerationError, http.StatusInternalServerError, err)
@@ -283,4 +294,123 @@ func (db *UserService) LoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.JsonResponse(authResponse, w, fmt.Sprintf(utils.UserLoggedInSuccessfully, userResponse.ID), http.StatusOK)
+}
+
+func (db *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
+		return
+	}
+
+	var request struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		utils.JsonError(w, utils.InvalidUserDataError, http.StatusBadRequest, err)
+		return
+	}
+
+	var user models.User
+	userData, err := user.GetUserByEmail(db.DB, request.Email)
+	if err != nil {
+		utils.JsonError(w, utils.UnauthorizedError, http.StatusBadRequest, err)
+		return
+	}
+
+	token, err := userData.GenerateUserToken(db.DB, constants.PasswordReset)
+	if err != nil {
+		utils.JsonError(w, utils.TokenGenerationError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// utils.SendEmail(userData.Email, "Password Reset", fmt.Sprintf(utils.ResetTokenValue, token))
+	utils.JsonResponse(token, w, utils.ResetPasswordTokenSent, http.StatusOK)
+}
+
+func (db *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
+		return
+	}
+
+	var request struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		utils.JsonError(w, utils.MissingTokenError, http.StatusBadRequest, err)
+		return
+	}
+
+	var user models.User
+	userToken, err := user.ValidateAndUseToken(db.DB, request.Token, constants.PasswordReset)
+	if err != nil {
+		utils.JsonError(w, utils.InvalidTokenError, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := user.ResetPassword(db.DB, userToken.ID, request.NewPassword); err != nil {
+		utils.JsonError(w, utils.PasswordResetError, http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.JsonResponse(nil, w, utils.NewPasswordSetSuccessfully, http.StatusCreated)
+}
+
+func (db *Service) SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
+		return
+	}
+
+	var request struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		utils.JsonError(w, utils.EmailRequiredError, http.StatusBadRequest, err)
+		return
+	}
+
+	var user models.User
+	userData, err := user.GetUserByEmail(db.DB, request.Email)
+	if err != nil {
+		utils.JsonError(w, utils.UnexpectedDatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	if ok := user.CheckUserEmailAlreadyVerified(db.DB, request.Email); ok {
+		utils.JsonError(w, utils.EmailAlreadyVerified, http.StatusAlreadyReported, err)
+		return
+	}
+
+	token, err := userData.GenerateUserToken(db.DB, constants.EmailVerification)
+	if err != nil {
+		utils.JsonError(w, utils.TokenGenerationError, http.StatusInternalServerError, err)
+		return
+	}
+
+	verificationURL := fmt.Sprintf("http://localhost:8080/user/verify/%s", token)
+	utils.JsonResponse(verificationURL, w, utils.EmailVerificationTokenSent, http.StatusOK)
+}
+
+func (db *Service) VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
+	token, err := utils.GetTokenFromPath(r)
+	if err != nil {
+		utils.JsonError(w, utils.InvalidTokenError, http.StatusBadRequest, err)
+		return
+	}
+
+	var user models.User
+	userData, err := user.ValidateAndUseToken(db.DB, token, constants.EmailVerification)
+	if err != nil {
+		utils.JsonError(w, utils.InvalidTokenError, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := user.VerifyUserEmail(db.DB, userData.UserID); err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.EmailVerificationFailed, userData.UserID), http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.JsonResponse([]interface{}{}, w, utils.EmailVerifiedSuccessfully, http.StatusOK)
 }

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"log"
 	"microservices/pkg/shared/dbs"
 	"microservices/pkg/shared/payloads"
@@ -11,16 +12,17 @@ import (
 )
 
 type User struct {
-	ID        int       `json:"id" gorm:"primaryKey;autoIncrement"`
-	FirstName string    `json:"first_name" gorm:"type:varchar(100);not null"`
-	LastName  string    `json:"last_name" gorm:"type:varchar(100);not null"`
-	Email     string    `json:"email" gorm:"type:varchar(100);unique;not null"`
-	Password  string    `json:"password" gorm:"type:varchar(255);not null"`
-	Gender    string    `json:"gender,omitempty"`
-	IsDeleted bool      `json:"is_deleted" gorm:"default:false"`
-	IsActive  bool      `json:"is_active" gorm:"default:true"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID         int       `json:"id" gorm:"primaryKey;autoIncrement"`
+	FirstName  string    `json:"first_name" gorm:"type:varchar(100);not null"`
+	LastName   string    `json:"last_name" gorm:"type:varchar(100);not null"`
+	Email      string    `json:"email" gorm:"type:varchar(100);unique;not null"`
+	Password   string    `json:"password" gorm:"type:varchar(255);not null"`
+	Gender     string    `json:"gender,omitempty"`
+	IsVerified bool      `json:"is_verified" gorm:"default:false"`
+	IsDeleted  bool      `json:"is_deleted" gorm:"default:false"`
+	IsActive   bool      `json:"is_active" gorm:"default:true"`
+	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type LoginUser struct {
@@ -33,10 +35,11 @@ type UserAuthResponse struct {
 	User  payloads.UserResponse `json:"user"`
 }
 
-type PasswordResetToken struct {
+type UserToken struct {
 	ID        int       `json:"id" gorm:"primaryKey;autoIncrement"`
 	UserID    int       `json:"user_id" gorm:"not null"`
 	Token     string    `json:"token" gorm:"unique;not null"`
+	Type      int       `json:"type" gorm:"not null"` // 1 for password_reset, 2 for email_verification
 	ExpiresAt time.Time `json:"expires_at" gorm:"not null"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
@@ -47,10 +50,10 @@ func NewUser() *User {
 
 func InitUserSchema() {
 	db := dbs.DB
-	if err := db.AutoMigrate(&User{}, &PasswordResetToken{}); err != nil {
-		log.Fatalf(utils.DatabaseMigrationError, "User and PasswordResetToken", err)
+	if err := db.AutoMigrate(&User{}, &UserToken{}); err != nil {
+		log.Fatalf(utils.DatabaseMigrationError, "User and UserToken", err)
 	} else {
-		log.Printf(utils.SchemaMigrationSuccess, "User and PasswordResetToken")
+		log.Printf(utils.SchemaMigrationSuccess, "User and UserToken")
 	}
 }
 
@@ -72,7 +75,7 @@ func (usr *User) FetchUserById(db *gorm.DB, id int) (*payloads.UserResponse, err
 	if err := db.Where("id =? and is_deleted =?", id, false).First(&usr).Error; err != nil {
 		return nil, err
 	}
-
+  
 	userResponse := CopyUserToUserResponse(usr)
 	return userResponse, nil
 }
@@ -106,16 +109,87 @@ func (user *User) DeleteUser(db *gorm.DB, id int) error {
 	return nil
 }
 
+func (user *User) GenerateUserToken(db *gorm.DB, tokenType int) (string, error) {
+	token := utils.GenerateRandomToken()
+	expiresAt := time.Now().Add(time.Hour * 1)
+
+	resetToken := UserToken{
+		UserID:    user.ID,
+		Token:     token,
+		Type:      tokenType,
+		ExpiresAt: expiresAt,
+		CreatedAt: time.Now(),
+	}
+
+	if err := db.Create(&resetToken).Error; err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+func (user *User) ValidateAndUseToken(db *gorm.DB, token string, tokenType int) (UserToken, error) {
+	var userToken UserToken
+
+	if err := db.Where("token = ? AND type = ? AND expires_at > ?", token, tokenType, time.Now()).First(&userToken).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return UserToken{}, errors.New("invalid or expired token")
+		}
+		return UserToken{}, err
+	}
+
+	// Delete the token after use
+	if err := db.Delete(&userToken).Error; err != nil {
+		return UserToken{}, errors.New("deleting reset token failed")
+	}
+
+	return userToken, nil
+}
+
+func (user *User) ResetPassword(db *gorm.DB, id int, password string) error {
+	hashedPassword, err := utils.HashedPassword(password)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Model(&user).Where("id = ?", id).Update("password", hashedPassword).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (user *User) CheckUserEmailAlreadyVerified(db *gorm.DB, email string) bool {
+	if err := db.Model(&user).Where("email =? and is_verified =?", email, 1).First(&user).Error; err != nil {
+		return false
+	}
+	return true
+}
+
+func (user *User) VerifyUserEmail(db *gorm.DB, id int) error {
+
+	if _, err := user.FetchUserById(db, id); err != nil {
+		return errors.New("user not found")
+	}
+
+	if err := db.Model(&user).Where("id = ?", id).Update("is_verified", 1).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func CopyUserToUserResponse(user *User) *payloads.UserResponse {
 	return &payloads.UserResponse{
-		ID:        user.ID,
-		FirstName: user.FirstName,
-		LastName:  user.LastName,
-		Email:     user.Email,
-		Gender:    user.Gender,
-		IsDeleted: user.IsDeleted,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		ID:         user.ID,
+		FirstName:  user.FirstName,
+		LastName:   user.LastName,
+		Email:      user.Email,
+		Gender:     user.Gender,
+		IsVerified: user.IsVerified,
+		IsDeleted:  user.IsDeleted,
+		IsActive:   user.IsActive,
+		CreatedAt:  user.CreatedAt,
+		UpdatedAt:  user.UpdatedAt,
 	}
 }

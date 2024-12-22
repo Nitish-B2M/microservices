@@ -55,6 +55,18 @@ func CheckRequestMethod(w http.ResponseWriter, r *http.Request, expectedMethod s
 	return true
 }
 
+func GetTokenFromPath(r *http.Request) (string, error) {
+	//token := r.Header.Get("Authorization")
+	//if token == "" {
+	//	return "", errors.New("no token")
+	//}
+	//return token, nil
+
+	parts := strings.Split(r.URL.Path, "/")
+	return parts[len(parts)-1], nil
+}
+
+// CheckPasswordSecurity password strengthen checks
 func CheckPasswordSecurity(password string) error {
 
 	conditions := []struct {
@@ -103,8 +115,7 @@ func hasSpecialChar(s string) bool {
 	return re.MatchString(s)
 }
 
-// For Email Validation
-// CheckEmailSecurity validates the email by applying a series of conditions using CheckSecurity.
+// CheckEmailSecurity For Email Validation, validates the email by applying a series of conditions using CheckSecurity.
 func CheckEmailSecurity(email string) error {
 	if email == "" {
 		return errors.New("email cannot be empty")

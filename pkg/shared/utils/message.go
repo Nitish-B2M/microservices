@@ -83,16 +83,21 @@ const (
 	EmailAlreadyExistsError = "email is already in use"
 	InvalidPasswordError    = "password does not meet security requirements"
 	UserSuspendedError      = "user is suspended and cannot perform this action"
+	PasswordResetError      = "error occurred while resetting password"
+	EmailVerificationFailed = "failed to verify email for user with ID: %d"
 )
 
 // Info messages
 const (
-	UsersFetchedSuccessfully = "all users fetched successfully"
-	UserFetchedSuccessfully  = "fetched user successfully with ID %d"
-	UserCreatedSuccessfully  = "user created successfully with ID %d"
-	UserUpdatedSuccessfully  = "user updated successfully with ID %d"
-	UserDeletedSuccessfully  = "user deleted successfully with ID %d"
-	UserLoggedInSuccessfully = "user logged in successfully with ID %d"
+	UsersFetchedSuccessfully   = "all users fetched successfully"
+	UserFetchedSuccessfully    = "fetched user successfully with ID %d"
+	UserCreatedSuccessfully    = "user created successfully with ID %d"
+	UserUpdatedSuccessfully    = "user updated successfully with ID %d"
+	UserDeletedSuccessfully    = "user deleted successfully with ID %d"
+	UserLoggedInSuccessfully   = "user logged in successfully with ID %d"
+	NewPasswordSetSuccessfully = "new password set successfully"
+	EmailVerifiedSuccessfully  = "email is verified"
+	EmailAlreadyVerified       = "email is already verified"
 )
 
 // *************JWT*************
@@ -100,15 +105,21 @@ const (
 const (
 	TokenGenerationError  = "token generation failed due to an internal error"
 	TokenExpiredError     = "token has expired"
-	InvalidTokenError     = "token is invalid or malformed"
-	TokenRevokedError     = "token has been revoked"
-	InvalidClaimsError    = "invalid claims in the token"
-	TokenParseError       = "error parsing token"
+	InvalidTokenError     = "invalid or expired token"
 	TokenSignatureError   = "token signature verification failed"
 	MissingTokenError     = "authorization token is missing"
 	TokenFormatError      = "token is in an invalid format"
 	TokenBlacklistedError = "token is blacklisted"
+)
 
-	// Permission-related Errors
+// JWT Info
+const (
+	ResetPasswordTokenSent     = "password reset token sent"
+	EmailVerificationTokenSent = "email verification token sent"
+	ResetTokenValue            = "your reset token: %s"
+)
+
+// InsufficientPermissionsError Permission related Errors
+const (
 	InsufficientPermissionsError = "insufficient permissions to access this resource"
 )
