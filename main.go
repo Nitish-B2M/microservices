@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"microservices/pkg/handlers"
 	"microservices/pkg/services/product"
 	"microservices/pkg/shared/dbs"
 	"microservices/pkg/shared/models"
+	"microservices/pkg/shared/utils"
 	"net/http"
 	"os"
 )
@@ -17,10 +18,11 @@ func main() {
 	InitSchemas()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello, World!")
+		utils.JsonResponse(nil, w, "Hello World", 0)
 	})
 
-	product.HandleProductRequest()
+	product.ProductHandler()
+	handlers.UserHandler()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -36,4 +38,5 @@ func main() {
 func InitSchemas() {
 	models.InitProductSchema()
 	models.InitTagSchema()
+	models.InitUserSchema()
 }

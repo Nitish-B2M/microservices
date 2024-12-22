@@ -3,7 +3,7 @@ package utils
 // ***********Database***********
 // Error messages
 const (
-	DatabaseConnectionError = "error connecting to the database"
+	DatabaseConnectionError = "failed to connect to the database"
 	UnexpectedDatabaseError = "unexpected database error"
 	SchemaMigrationSuccess  = "%s schema migrated successfully"
 	DatabaseMigrationError  = "failed to migrate %s schema: %v"
@@ -16,7 +16,7 @@ const (
 	BadRequestError      = "bad request"
 	UnauthorizedError    = "unauthorized access"
 	ForbiddenError       = "access forbidden"
-	FailedToSendResponse = "Failed to send response"
+	FailedToSendResponse = "failed to send response"
 )
 
 // ***********Product***********
@@ -27,29 +27,33 @@ const (
 	ProductUpdateError           = "error occurred while updating product with ID %d"
 	ProductCreationError         = "error occurred while creating product"
 	InvalidProductIDError        = "invalid product ID provided"
-	InvalidProductDataError      = "invalid product data"
-	InvalidProductRequest        = "Invalid product request"
+	InvalidProductDataError      = "invalid data provided for product creation or update"
+	InvalidProductRequest        = "invalid product request"
 	ProductUnexpectedFetchError  = "unexpected error fetching product for update"
-	ProductUnexpectedUpdateError = "unexpected error while fetching product"
-	ProductTagUpdateError        = "error occurred while updating product tags with P_ID %d"
+	ProductUnexpectedUpdateError = "unexpected error while updating product"
+	ProductTagUpdateError        = "failed to update tags for product with ID %d"
+	ProductOutOfStockError       = "product with ID %d is out of stock"
+	ProductCategoryError         = "invalid category for product with ID %d"
+	ProductPriceError            = "invalid price for product with ID %d"
 )
 
 // Info messages
 const (
-	ProductsFetchedSuccessfully = "Fetched all products successfully"
-	ProductFetchedSuccessfully  = "Fetched product successfully with ID %d"
+	ProductsFetchedSuccessfully = "all products fetched successfully"
+	ProductFetchedSuccessfully  = "fetched product successfully with ID %d"
 	ProductCreatedSuccessfully  = "product created successfully with ID %d"
 	ProductUpdatedSuccessfully  = "product updated successfully with ID %d"
 	ProductDeletedSuccessfully  = "product deleted successfully with ID %d"
-	ProductNotModified          = "No updates required for product with ID %d"
+	ProductNotModified          = "no updates required for product with ID %d"
 )
 
 // ************Tag*************
 const (
-	TagCreationFailed = "failed to create tag: %v"
-	TagExistError     = "error checking tag existence: %v"
-	TagNotExist       = "tag not exists, tag name: %v"
-	TagFetchError     = "error while fetching tag"
+	TagCreationFailed     = "failed to create tag: %v"
+	TagExistError         = "error checking tag existence: %v"
+	TagNotExist           = "tag does not exist, tag name: %v"
+	TagFetchError         = "error occurred while fetching tag"
+	TagAlreadyExistsError = "tag with name %v already exists"
 )
 
 // Validation error messages
@@ -57,4 +61,65 @@ const (
 	InvalidRequestMethod = "invalid request method"
 	InvalidRequestPath   = "invalid request path"
 	InvalidRequestBody   = "invalid request body"
+)
+
+// *********** User ***********
+// Error messages
+const (
+	UserNotFoundError       = "user with ID %d not found"
+	UserDeletionError       = "error occurred while deleting user with ID %d"
+	UserUpdateError         = "failed to update user with ID %d"
+	UserCreationError       = "failed to create user"
+	UserNotModified         = "user with ID %d not modified"
+	InvalidUserIDError      = "invalid user ID %d provided"
+	InvalidUserDataError    = "invalid data provided for user creation or update"
+	EmailRequiredError      = "email is required"
+	PasswordRequiredError   = "password is required"
+	PasswordLengthError     = "password must be at least 6 characters"
+	EmailFormatError        = "invalid email format"
+	FirstNameRequiredError  = "first name is required"
+	LastNameRequiredError   = "last name is required"
+	PasswordHashError       = "error hashing password"
+	EmailAlreadyExistsError = "email is already in use"
+	InvalidPasswordError    = "password does not meet security requirements"
+	UserSuspendedError      = "user is suspended and cannot perform this action"
+	PasswordResetError      = "error occurred while resetting password"
+	EmailVerificationFailed = "failed to verify email for user with ID: %d"
+)
+
+// Info messages
+const (
+	UsersFetchedSuccessfully   = "all users fetched successfully"
+	UserFetchedSuccessfully    = "fetched user successfully with ID %d"
+	UserCreatedSuccessfully    = "user created successfully with ID %d"
+	UserUpdatedSuccessfully    = "user updated successfully with ID %d"
+	UserDeletedSuccessfully    = "user deleted successfully with ID %d"
+	UserLoggedInSuccessfully   = "user logged in successfully with ID %d"
+	NewPasswordSetSuccessfully = "new password set successfully"
+	EmailVerifiedSuccessfully  = "email is verified"
+	EmailAlreadyVerified       = "email is already verified"
+)
+
+// *************JWT*************
+// General JWT Errors
+const (
+	TokenGenerationError  = "token generation failed due to an internal error"
+	TokenExpiredError     = "token has expired"
+	InvalidTokenError     = "invalid or expired token"
+	TokenSignatureError   = "token signature verification failed"
+	MissingTokenError     = "authorization token is missing"
+	TokenFormatError      = "token is in an invalid format"
+	TokenBlacklistedError = "token is blacklisted"
+)
+
+// JWT Info
+const (
+	ResetPasswordTokenSent     = "password reset token sent"
+	EmailVerificationTokenSent = "email verification token sent"
+	ResetTokenValue            = "your reset token: %s"
+)
+
+// InsufficientPermissionsError Permission related Errors
+const (
+	InsufficientPermissionsError = "insufficient permissions to access this resource"
 )
