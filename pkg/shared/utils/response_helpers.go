@@ -19,7 +19,7 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 	}
 
 	res1 := ""
-	if len(string(res)) > 50 {
+	if len(string(res)) > 100 {
 		res1 = strings.TrimSpace(string(res[:100])) + "...."
 	} else {
 		res1 = string(res)

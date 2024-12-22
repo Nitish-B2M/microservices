@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"microservices/pkg/handlers"
 	"microservices/pkg/services/product"
 	"microservices/pkg/shared/dbs"
 	"microservices/pkg/shared/models"
@@ -20,7 +21,8 @@ func main() {
 		fmt.Fprintf(w, "Hello, World!")
 	})
 
-	product.HandleProductRequest()
+	product.ProductHandler()
+	handlers.UserHandler()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -36,4 +38,5 @@ func main() {
 func InitSchemas() {
 	models.InitProductSchema()
 	models.InitTagSchema()
+	models.InitUserSchema()
 }

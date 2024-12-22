@@ -22,7 +22,7 @@ type FilterCriteria struct {
 	Tags        []string `json:"tags"`
 }
 
-func HandleProductRequest() {
+func ProductHandler() {
 	http.HandleFunc("/products", getProducts)
 	http.HandleFunc("/products/{id}", getProductById)
 	http.HandleFunc("/products/add", addProduct)
