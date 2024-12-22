@@ -19,6 +19,7 @@ func UserHandler() {
 	http.HandleFunc("/user/password/reset/request", userService.RequestPasswordReset)
 	http.HandleFunc("/user/verify/send", userService.SendVerificationEmail)
 	http.HandleFunc("/user/verify/{token}", userService.VerifyUserEmail)
+
 	// http.Handle("/user/profile", middlewares.JWTMiddleware(http.HandlerFunc(db.UserService.FetchUserById)))
 	// http.Handle("/user/list", middlewares.JWTMiddleware(http.HandlerFunc(db.UserService.GetAllUsers)))
 }

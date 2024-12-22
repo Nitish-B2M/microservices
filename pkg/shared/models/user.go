@@ -75,6 +75,7 @@ func (usr *User) FetchUserById(db *gorm.DB, id int) (*payloads.UserResponse, err
 	if err := db.Where("id =? and is_deleted =?", id, false).First(&usr).Error; err != nil {
 		return nil, err
 	}
+  
 	userResponse := CopyUserToUserResponse(usr)
 	return userResponse, nil
 }
