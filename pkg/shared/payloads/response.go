@@ -39,7 +39,7 @@ type LoginResponse struct {
 	Email      string    `json:"email"`
 	Gender     string    `json:"gender,omitempty"`
 	IsVerified bool      `json:"is_verified"`
-	IsDeleted  bool      `json:"-"`
+	IsDeleted  bool      `json:"is_deleted"`
 	IsActive   bool      `json:"is_active"`
 	CreatedAt  time.Time `json:"-"`
 	UpdatedAt  time.Time `json:"-"`
