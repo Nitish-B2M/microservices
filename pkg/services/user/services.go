@@ -280,7 +280,7 @@ func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
 		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, err)
 		return
 	}
-
+  
 	token, err := utils.GenerateJWT(user.ID, user.Email)
 	if err != nil {
 		utils.JsonError(w, utils.TokenGenerationError, http.StatusInternalServerError, err)
