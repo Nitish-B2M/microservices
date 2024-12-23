@@ -15,8 +15,8 @@ type User struct {
 	ID         int       `json:"id" gorm:"primaryKey;autoIncrement"`
 	FirstName  string    `json:"first_name" gorm:"type:varchar(100);not null"`
 	LastName   string    `json:"last_name" gorm:"type:varchar(100);not null"`
-	Email      string    `json:"email" gorm:"type:varchar(100);unique;not null"`
-	Password   string    `json:"password" gorm:"type:varchar(255);not null"`
+	Email      string    `json:"email" gorm:"type:varchar(100);not null"`
+	Password   string    `json:"-" gorm:"type:varchar(255);not null"`
 	Gender     string    `json:"gender,omitempty"`
 	IsVerified bool      `json:"is_verified" gorm:"default:false"`
 	IsDeleted  bool      `json:"is_deleted" gorm:"default:false"`
@@ -44,16 +44,22 @@ type UserToken struct {
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
+type Role struct {
+	ID     uint   `json:"id"gorm:"primaryKey"`
+	Role   string `json:"role"gorm:"not null"` // Role name (admin, seller, user)
+	UserID int    `json:"user_id"gorm:"not null;index"`
+}
+
 func NewUser() *User {
 	return &User{}
 }
 
 func InitUserSchema() {
 	db := dbs.DB
-	if err := db.AutoMigrate(&User{}, &UserToken{}); err != nil {
-		log.Fatalf(utils.DatabaseMigrationError, "User and UserToken", err)
+	if err := db.AutoMigrate(&User{}, &UserToken{}, &Role{}); err != nil {
+		log.Fatalf(utils.DatabaseMigrationError, "User, UserToken and UserRole", err)
 	} else {
-		log.Printf(utils.SchemaMigrationSuccess, "User and UserToken")
+		log.Printf(utils.SchemaMigrationSuccess, "User, UserToken and UserRole")
 	}
 }
 
@@ -75,7 +81,9 @@ func (usr *User) FetchUserById(db *gorm.DB, id int) (*payloads.UserResponse, err
 	if err := db.Where("id =? and is_deleted =?", id, false).First(&usr).Error; err != nil {
 		return nil, err
 	}
-  
+	var role Role
+	roleId, _ := role.createDefaultUserRole(db, id)
+	log.Println(roleId)
 	userResponse := CopyUserToUserResponse(usr)
 	return userResponse, nil
 }
@@ -104,6 +112,20 @@ func (user *User) UpdateUser(db *gorm.DB, id int, updatedFields map[string]inter
 
 func (user *User) DeleteUser(db *gorm.DB, id int) error {
 	if err := db.Model(&user).Where("id = ? and is_deleted = ?", id, false).Update("is_deleted", true).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (user *User) DeActivateUser(db *gorm.DB, id int) error {
+	if err := db.Model(&user).Where("id = ?", id).Update("is_active", false).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (user *User) ActivateUser(db *gorm.DB, id int) error {
+	if err := db.Model(&user).Where("id = ?", id).Update("is_active", true).Error; err != nil {
 		return err
 	}
 	return nil
@@ -192,4 +214,19 @@ func CopyUserToUserResponse(user *User) *payloads.UserResponse {
 		CreatedAt:  user.CreatedAt,
 		UpdatedAt:  user.UpdatedAt,
 	}
+}
+
+// ############# Role ############
+func (role *Role) createDefaultUserRole(db *gorm.DB, userId int) (uint, error) {
+	if err := db.Where("role = ?", "user").First(&role).Error; err != nil {
+		role = &Role{
+			Role:   "user",
+			UserID: userId,
+		}
+		if err := db.Create(&role).Error; err != nil {
+			return 0, err
+		}
+	}
+
+	return role.ID, nil
 }

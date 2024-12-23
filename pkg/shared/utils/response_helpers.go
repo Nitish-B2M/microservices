@@ -11,10 +11,14 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 		status = http.StatusOK
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	cw := NewCustomResponseWriter(w)
+	cw.WriteHeader(status)
+
 	res, err := json.Marshal(data)
 	if err != nil {
 		LogError("error marshaling data", map[string]interface{}{"error": err})
-		http.Error(w, InternalServerError, http.StatusInternalServerError)
+		http.Error(cw, InternalServerError, http.StatusInternalServerError)
 		return
 	}
 
@@ -26,9 +30,6 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 	}
 	LogInfo("sending response", map[string]interface{}{"response": res1})
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
 	resp := map[string]interface{}{
 		"message": message,
 		"data":    data,
@@ -36,7 +37,7 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		LogError("error while encoding final response", map[string]interface{}{"error": err})
-		http.Error(w, FailedToSendResponse, http.StatusInternalServerError)
+		http.Error(cw, FailedToSendResponse, http.StatusInternalServerError)
 	}
 }
 
@@ -46,4 +47,12 @@ func JsonError(w http.ResponseWriter, message string, status int, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err error) {
+	LogError(message, map[string]interface{}{"error": err})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": message, "errorDetail": err.Error()})
 }

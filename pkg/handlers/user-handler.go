@@ -14,6 +14,8 @@ func UserHandler() {
 	http.HandleFunc("/user/add", userService.AddUser)
 	http.HandleFunc("/user/update/{id}", userService.UpdateUser)
 	http.HandleFunc("/user/delete/{id}", userService.DeleteUser)
+	http.HandleFunc("/user/activate/{id}", userService.ActivateUser)
+	http.HandleFunc("/user/deactivate/{id}", userService.DeActivateUser)
 	http.HandleFunc("/user/login", userService.LoginUser)
 	http.HandleFunc("/user/password/reset", userService.ResetPassword)
 	http.HandleFunc("/user/password/reset/request", userService.RequestPasswordReset)

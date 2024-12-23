@@ -28,8 +28,8 @@ type UserResponse struct {
 	IsVerified bool      `json:"is_verified"`
 	IsDeleted  bool      `json:"is_deleted"`
 	IsActive   bool      `json:"is_active"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	CreatedAt  time.Time `json:"created_at" update_only:"-"`
+	UpdatedAt  time.Time `json:"updated_at" update_only:"-"`
 }
 
 type LoginResponse struct {
