@@ -3,12 +3,14 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"github.com/gorilla/mux"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
+// ValidateRequestPath deprecated as using mux library now onwards
 func ValidateRequestPath(path string) ([]string, bool) {
 	parts := strings.Split(path, "/")
 
@@ -27,6 +29,7 @@ func ValidateRequestPath(path string) ([]string, bool) {
 	return parts, true
 }
 
+// GetProductIdFromPath deprecated as using mux library now onwards
 func GetProductIdFromPath(r *http.Request) (int, error) {
 	path := r.URL.Path
 	parts, ok := ValidateRequestPath(path)
@@ -37,6 +40,7 @@ func GetProductIdFromPath(r *http.Request) (int, error) {
 	return id, err
 }
 
+// GetUserIdFromPath deprecated as using mux library now onwards
 func GetUserIdFromPath(r *http.Request) (int, error) {
 	path := r.URL.Path
 	parts, ok := ValidateRequestPath(path)
@@ -44,6 +48,12 @@ func GetUserIdFromPath(r *http.Request) (int, error) {
 		return 0, fmt.Errorf("invalid path")
 	}
 	id, err := strconv.Atoi(parts[len(parts)-1])
+	return id, err
+}
+
+func GetIDFromPath(r *http.Request) (int, error) {
+	pathVar := mux.Vars(r)
+	id, err := strconv.Atoi(pathVar["id"])
 	return id, err
 }
 

@@ -133,6 +133,40 @@ const (
 	UserIdNotFoundInToken      = "User ID not found in token"
 )
 
+// ************* Cart **************
+// Errors
+const (
+	CartNotFoundError         = "cart not found for user with ID %d"
+	CartItemNotFoundError     = "cart item with ID %d not found in cart"
+	CartItemAdditionError     = "error occurred while adding item to cart"
+	CartItemUpdateError       = "error occurred while updating item in cart"
+	CartItemDeletionError     = "error occurred while deleting item from cart"
+	CartOutOfStockError       = "item with ID %d is out of stock"
+	CartInvalidItemQuantity   = "invalid quantity for item with ID %d"
+	CartInvalidProductError   = "invalid product for item with ID %d"
+	CartUnexpectedFetchError  = "unexpected error fetching cart data"
+	CartUnexpectedUpdateError = "unexpected error updating cart data"
+)
+
+// Info messages
+const (
+	CartFetchedSuccessfully     = "cart fetched successfully for user with ID %d"
+	CartItemAddedSuccessfully   = "item with ID %d added to cart successfully"
+	CartItemUpdatedSuccessfully = "item with ID %d updated in cart successfully"
+	CartItemDeletedSuccessfully = "item with ID %d removed from cart successfully"
+	CartCheckedOutSuccessfully  = "cart checked out successfully for user with ID %d"
+)
+
+// *************** Templates and Files ********************
+// Errors
+const (
+	TemplateParsingFailed = "failed to parse template: %v"
+	TemplateExecuteFailed = "failed to execute template: %v"
+	FileRetrieveFailed    = "error retrieving file"
+	UnableToSaveFile      = "unable to save file"
+	ErrorSavingFile       = "error saving file"
+)
+
 // InsufficientPermissionsError Permission related Errors
 const (
 	InsufficientPermissionsError = "insufficient permissions to access this resource"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/gorilla/mux"
 	"log"
 	"microservices/pkg/handlers"
 	"microservices/pkg/services/product"
@@ -13,11 +14,6 @@ import (
 	"os"
 )
 
-func ProtectedHandler(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("userID").(uint)
-	fmt.Fprintf(w, "Hello, User ID: %d", userID)
-}
-
 func main() {
 	dbs.InitDB()
 	defer dbs.CloseDB()
@@ -25,17 +21,19 @@ func main() {
 
 	InitSchemas()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	r := mux.NewRouter()
+	//r.Use(middlewares.AuthMiddleware)
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		utils.JsonResponse(nil, w, "Hello World", 0)
 	})
 
-	http.Handle("/protected", middlewares.AuthMiddleware(http.HandlerFunc(ProtectedHandler)))
-	http.Handle("/admin", middlewares.AuthMiddleware(middlewares.RoleMiddleware(db, "admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r.Handle("/admin", middlewares.AuthMiddleware(middlewares.RoleMiddleware(db, "admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Admin")
 	}))))
 
-	product.ProductHandler()
-	handlers.UserHandler()
+	product.ProductHandler(r)
+	handlers.UserHandler(r)
+	handlers.CartHandler(r)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -43,7 +41,7 @@ func main() {
 	}
 
 	log.Printf("Server starting on port %s", port)
-	if err := http.ListenAndServe("localhost:"+port, nil); err != nil {
+	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
@@ -52,4 +50,5 @@ func InitSchemas() {
 	models.InitProductSchema()
 	models.InitTagSchema()
 	models.InitUserSchema()
+	models.InitCartSchema()
 }

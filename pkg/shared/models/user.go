@@ -16,7 +16,7 @@ type User struct {
 	FirstName  string    `json:"first_name" gorm:"type:varchar(100);not null"`
 	LastName   string    `json:"last_name" gorm:"type:varchar(100);not null"`
 	Email      string    `json:"email" gorm:"type:varchar(100);not null"`
-	Password   string    `json:"-" gorm:"type:varchar(255);not null"`
+	Password   string    `json:"password" gorm:"type:varchar(255);not null"`
 	Gender     string    `json:"gender,omitempty"`
 	IsVerified bool      `json:"is_verified" gorm:"default:false"`
 	IsDeleted  bool      `json:"is_deleted" gorm:"default:false"`
@@ -50,10 +50,6 @@ type Role struct {
 	UserID int    `json:"user_id"gorm:"not null;index"`
 }
 
-func NewUser() *User {
-	return &User{}
-}
-
 func InitUserSchema() {
 	db := dbs.DB
 	if err := db.AutoMigrate(&User{}, &UserToken{}, &Role{}); err != nil {
@@ -81,9 +77,7 @@ func (usr *User) FetchUserById(db *gorm.DB, id int) (*payloads.UserResponse, err
 	if err := db.Where("id =? and is_deleted =?", id, false).First(&usr).Error; err != nil {
 		return nil, err
 	}
-	var role Role
-	roleId, _ := role.createDefaultUserRole(db, id)
-	log.Println(roleId)
+
 	userResponse := CopyUserToUserResponse(usr)
 	return userResponse, nil
 }

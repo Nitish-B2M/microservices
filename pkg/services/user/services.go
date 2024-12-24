@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"microservices/pkg/shared/constants"
 	"microservices/pkg/shared/models"
 	"microservices/pkg/shared/payloads"
@@ -27,10 +28,16 @@ type User interface {
 	LoginUser(w http.ResponseWriter, r *http.Request)
 	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
 	ResetPassword(w http.ResponseWriter, r *http.Request)
-	SendResetPasswordEmail(w http.ResponseWriter, r *http.Request)
+	SendVerificationEmail(w http.ResponseWriter, r *http.Request)
 	VerifyEmail(w http.ResponseWriter, r *http.Request)
 	DeActivateUser(w http.ResponseWriter, r *http.Request)
 	ActivateUser(w http.ResponseWriter, r *http.Request)
+}
+
+func NewUser(db *gorm.DB) *Service {
+	return &Service{
+		DB: db,
+	}
 }
 
 func validateAddUserRequest(w http.ResponseWriter, data models.User) bool {
@@ -123,7 +130,7 @@ func (db *Service) FetchUserById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetUserIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
 		return
@@ -140,10 +147,6 @@ func (db *Service) FetchUserById(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *Service) AddUser(w http.ResponseWriter, r *http.Request) {
-	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
-		return
-	}
-
 	var userRequest models.User
 	if err := json.NewDecoder(r.Body).Decode(&userRequest); err != nil {
 		utils.JsonError(w, utils.InvalidUserDataError, http.StatusBadRequest, err)
@@ -179,7 +182,19 @@ func (db *Service) AddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserCreatedSuccessfully, id), http.StatusOK)
+	//email send
+	var userCreationTemplate utils.UserCreation
+
+	userCreationTemplate.Email = userRequest.Email
+	userCreationTemplate.Role = "User"
+	template, err := utils.GenerateUserCreationMessage(userCreationTemplate)
+	if err != nil {
+		log.Fatal("Error generating user creation message:", err)
+	}
+	_ = template
+	//utils.SendEmail(userRequest.Email, "User Created Successfully", template)
+
+	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserCreatedSuccessfully, 1), http.StatusOK)
 }
 
 func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +202,7 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetUserIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
 		return
@@ -239,7 +254,7 @@ func (db *Service) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetUserIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
 		return
@@ -265,7 +280,7 @@ func (db *Service) DeActivateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetUserIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
 		return
@@ -297,7 +312,7 @@ func (db *Service) ActivateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetUserIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
 		return

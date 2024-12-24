@@ -10,73 +10,11 @@
 } 
 ```
 
-
-#### this function use to update the table each row with default value for newly added column
-``` func UpdateOldProductData() {
-	// Query for all products (or products with NULL/missing data)
-	var products []Product
-	if err := dbs.DB.Find(&products).Error; err != nil {
-		log.Printf("Error fetching products: %v", err)
-		return
-	}
-
-	// Iterate over each product and check for fields that need to be set to default values
-	for _, product := range products {
-		updated := false
-
-		// Simplified check for IsDeleted
-		if !product.IsDeleted { // default value is false
-			product.IsDeleted = false
-			updated = true
-		}
-
-		// Check and update Discount if it's 0
-		if product.Discount == 0.0 {
-			product.Discount = 0.0
-			updated = true
-		}
-
-		// Check and update Category if it's empty
-		if product.Category == "" {
-			product.Category = "" // Default is empty string
-			updated = true
-		}
-
-		// Check and update Tags if it's nil or empty
-		if len(product.Tags) == 0 {
-			product.Tags = []string{} // Default is empty slice
-			updated = true
-		}
-
-		// Check and update Rating if it's 0.0
-		if product.Rating == 0.0 {
-			product.Rating = 0.0 // Default is 0.0
-			updated = true
-		}
-
-		if product.CreatedAt.IsZero() {
-			product.CreatedAt = time.Now() // Set current time
-			updated = true
-		}
-
-		// Check and set UpdatedAt if it is zero time (invalid date '0000-00-00')
-		if product.UpdatedAt.IsZero() {
-			product.UpdatedAt = time.Now() // Set current time
-			updated = true
-		}
-
-		// If the product was updated, save it
-		if updated {
-			if err := dbs.DB.Save(&product).Error; err != nil {
-				log.Printf("Error updating product ID %d: %v", product.ID, err)
-			} else {
-				log.Printf("Product ID %d updated with default values.", product.ID)
-			}
-		}
-	}
-}
-
-```
+## Add more apis to product 
+1. filter out category
+2. add new category(admin only)
+3. retrieve category 
+4. Media upload
 
 ## interesting topic
 - if we want to automatically insert into 3rd table entries of table1 and table2 data then use 'gorm:"many2many:product_tags;"' into struct

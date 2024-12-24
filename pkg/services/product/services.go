@@ -3,10 +3,17 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
+	"io"
+	"log"
+	"microservices/pkg/shared/middlewares"
 	"microservices/pkg/shared/models"
 	"microservices/pkg/shared/payloads"
 	"microservices/pkg/shared/utils"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -22,13 +29,19 @@ type FilterCriteria struct {
 	Tags        []string `json:"tags"`
 }
 
-func ProductHandler() {
-	http.HandleFunc("/products", getProducts)
-	http.HandleFunc("/products/{id}", getProductById)
-	http.HandleFunc("/products/add", addProduct)
-	http.HandleFunc("/products/update/{id}", updateProduct)
-	http.HandleFunc("/products/delete/{id}", deleteProduct)
-	http.HandleFunc("/products/filter", filterProducts)
+func ProductHandler(r *mux.Router) {
+	// implementing mux router
+	r.Handle("/products", http.HandlerFunc(getProducts)).Methods(http.MethodGet)
+	r.Handle("/products/{id}", http.HandlerFunc(getProductById)).Methods(http.MethodGet)
+	r.Handle("/products/filter", http.HandlerFunc(filterProducts)).Methods(http.MethodGet)
+	r.Handle("/products/add", middlewares.AuthMiddleware(http.HandlerFunc(addProduct))).Methods(http.MethodPost)
+	r.Handle("/products/update/{id}", middlewares.AuthMiddleware(http.HandlerFunc(updateProduct))).Methods(http.MethodPut)
+	r.Handle("/products/delete/{id}", middlewares.AuthMiddleware(http.HandlerFunc(deleteProduct))).Methods(http.MethodDelete)
+	//retrieve categories
+	//add category api(admin only)
+	//filter out category
+	//media upload api
+	r.Handle("/products/{id}/image-upload", http.HandlerFunc(uploadProductImageHandler)).Methods(http.MethodPost)
 }
 
 func getProducts(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +54,7 @@ func getProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 func getProductById(w http.ResponseWriter, r *http.Request) {
-	id, err := utils.GetProductIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
 		return
@@ -93,7 +106,7 @@ func updateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetProductIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
 		return
@@ -130,7 +143,7 @@ func deleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetProductIdFromPath(r)
+	id, err := utils.GetIDFromPath(r)
 	if err != nil {
 		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
 		return
@@ -176,4 +189,71 @@ func filterProducts(w http.ResponseWriter, r *http.Request) {
 
 	resp := FilterOutProducts(criteria)
 	utils.JsonResponse(resp, w, "filtered data", 0)
+}
+
+func uploadProductImageHandler(w http.ResponseWriter, r *http.Request) {
+	productID := getProductID(r.URL.Path)
+	if productID == 0 {
+		http.Error(w, utils.InvalidProductIDError, http.StatusBadRequest)
+		return
+	}
+	log.Println(productID)
+
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+
+	err := r.ParseMultipartForm(10 << 20) // 10MB max memory
+	if err != nil {
+		http.Error(w, "Unable to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, handler, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, utils.FileRetrieveFailed, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	uploadDir := "./uploads"
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.Mkdir(uploadDir, 0755)
+	}
+
+	filePath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", productID, handler.Filename))
+	destFile, err := os.Create(filePath)
+	if err != nil {
+		http.Error(w, utils.UnableToSaveFile, http.StatusInternalServerError)
+		return
+	}
+	log.Println(filePath, *destFile)
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, file)
+	if err != nil {
+		http.Error(w, utils.ErrorSavingFile, http.StatusInternalServerError)
+		return
+	}
+
+}
+
+func getProductID(path string) int {
+	segments := splitPath(path)
+	if len(segments) >= 2 && segments[0] == "products" {
+		id, err := strconv.Atoi(segments[1])
+		if err == nil {
+			return id
+		}
+	}
+	return 0
+}
+
+func splitPath(path string) []string {
+	segments := strings.Split(path, "/")
+	var cleanedSegments []string
+	for _, segment := range segments {
+		if segment != "" {
+			cleanedSegments = append(cleanedSegments, segment)
+		}
+	}
+	return cleanedSegments
 }
