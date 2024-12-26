@@ -1,4 +1,4 @@
-module microservices
+module e-commerce-backend
 
 go 1.23.1
 
