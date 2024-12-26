@@ -1,17 +1,16 @@
 package main
 
 import (
+	"e-commerce-backend/cart/dbs"
+	"e-commerce-backend/cart/internal/handlers"
+	"e-commerce-backend/cart/internal/models"
+	"e-commerce-backend/shared/middlewares"
+	"e-commerce-backend/shared/utils"
 	"fmt"
-	"github.com/gorilla/mux"
 	"log"
-	"microservices/pkg/handlers"
-	"microservices/pkg/services/product"
-	"microservices/pkg/shared/dbs"
-	"microservices/pkg/shared/middlewares"
-	"microservices/pkg/shared/models"
-	"microservices/pkg/shared/utils"
 	"net/http"
-	"os"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
@@ -31,15 +30,9 @@ func main() {
 		fmt.Fprintf(w, "Admin")
 	}))))
 
-	product.ProductHandler(r)
-	handlers.UserHandler(r)
 	handlers.CartHandler(r)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
+	port := "8083"
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
@@ -47,8 +40,5 @@ func main() {
 }
 
 func InitSchemas() {
-	models.InitProductSchema()
-	models.InitTagSchema()
-	models.InitUserSchema()
 	models.InitCartSchema()
 }
