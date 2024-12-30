@@ -44,11 +44,33 @@ func FetchTagById(db *gorm.DB, tagId int) (*Tag, error) {
 	return &tag, nil
 }
 
-func CheckAndCreateProductTags(db *gorm.DB, tags []string) ([]int, map[string]error) {
+func GetTagsByProductId(db *gorm.DB, productId int) ([]Tag, error) {
+	var tags []Tag
+	if err := db.Select("id").Where("product_id = ?", productId).Find(&tags).Error; err != nil {
+		return nil, err
+	}
+	return tags, nil
+}
+
+func CheckAndCreateProductTags(db *gorm.DB, tags []string, pId int) ([]int, map[string]error) {
 	tagErrors := make(map[string]error)
 	var tagIds []int
 
 	if len(tags) == 0 || tags == nil {
+		if pId == 0 {
+		} else {
+			existingTags, err := GetTagsByProductId(db, pId)
+			if err != nil {
+				return []int{}, tagErrors
+			}
+			if len(existingTags) > 0 {
+				var existingTagIds []int
+				for _, tag := range existingTagIds {
+					tagIds = append(tagIds, tag)
+				}
+				return existingTagIds, tagErrors
+			}
+		}
 		return tagIds, tagErrors
 	}
 

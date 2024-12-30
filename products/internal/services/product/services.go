@@ -5,8 +5,8 @@ import (
 	"e-commerce-backend/products/pkg/payloads"
 	"e-commerce-backend/shared/utils"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/gorilla/mux"
 	"io"
 	"log"
 	"net/http"
@@ -59,7 +59,9 @@ func trackUpdatedProductFields(oldData models.Product, newData payloads.ProductR
 		field := v.Type().Field(i)
 		fieldName := field.Name
 		fieldValue := v.Field(i)
-
+		if fieldName == "Tags" {
+			continue
+		}
 		if fieldValue.IsZero() || fieldName == "ID" {
 			continue
 		}
@@ -238,7 +240,7 @@ func (db *Service) FilterProducts(w http.ResponseWriter, r *http.Request) {
 func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Request) {
 	productID := getProductID(r.URL.Path)
 	if productID == 0 {
-		http.Error(w, utils.InvalidProductIDError, http.StatusBadRequest)
+		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, nil)
 		return
 	}
 	log.Println(productID)
@@ -247,13 +249,13 @@ func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Requ
 
 	err := r.ParseMultipartForm(10 << 20) // 10MB max memory
 	if err != nil {
-		http.Error(w, "Unable to parse form", http.StatusBadRequest)
+		utils.JsonError(w, "Unable to parse form", http.StatusBadRequest, err)
 		return
 	}
 
 	file, handler, err := r.FormFile("image")
 	if err != nil {
-		http.Error(w, utils.FileRetrieveFailed, http.StatusBadRequest)
+		utils.JsonError(w, utils.FileRetrieveFailed, http.StatusBadRequest, err)
 		return
 	}
 	defer file.Close()
@@ -266,7 +268,7 @@ func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Requ
 	filePath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", productID, handler.Filename))
 	destFile, err := os.Create(filePath)
 	if err != nil {
-		http.Error(w, utils.UnableToSaveFile, http.StatusInternalServerError)
+		utils.JsonError(w, utils.UnableToSaveFile, http.StatusInternalServerError, err)
 		return
 	}
 	log.Println(filePath, *destFile)
@@ -274,7 +276,7 @@ func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Requ
 
 	_, err = io.Copy(destFile, file)
 	if err != nil {
-		http.Error(w, utils.ErrorSavingFile, http.StatusInternalServerError)
+		utils.JsonError(w, utils.ErrorSavingFile, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -302,14 +304,112 @@ func splitPath(path string) []string {
 	return cleanedSegments
 }
 
-func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
-	productID := getProductID(r.URL.Path)
-	if productID == 0 {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New("product ID is required"))
+func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.Request) {
+	// Parse product ID from URL
+	productID := mux.Vars(r)["id"] // Use your router logic to extract the `id`
+	if productID == "" {
+		utils.JsonError(w, "Product ID is required", http.StatusBadRequest, nil)
 		return
 	}
 
-	cartUrl := "http://localhost:8082/cart/add"
-	_ = cartUrl
-	//req, err := http.NewRequest("POST", cartUrl, )
+	productIDInt, err := strconv.Atoi(productID)
+	if err != nil {
+		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		ProductID int    `json:"product_id"`
+		Quantity  int    `json:"quantity"`
+		Method    string `json:"method"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.JsonError(w, "Invalid request body", http.StatusBadRequest, err)
+		return
+	}
+
+	// Update product quantity in the database
+	if req.Method == "Add" {
+		err = AddQuantity(db.DB, productIDInt, req.Quantity)
+		if err != nil {
+			utils.JsonError(w, fmt.Sprintf("Failed to update quantity for product %s", productID), http.StatusInternalServerError, err)
+			return
+		}
+	} else if req.Method == "Subtract" {
+		err = SubtractQuantity(db.DB, productIDInt, req.Quantity)
+		if err != nil {
+			utils.JsonError(w, fmt.Sprintf("Failed to update quantity for product %s", productID), http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Product quantity updated successfully"))
+}
+
+func SubtractQuantity(db *gorm.DB, productID int, quantity int) error {
+	product, err := models.FetchProductById(productID)
+	if err != nil {
+		return err
+	}
+
+	if product.Quantity < quantity {
+		return fmt.Errorf("not enough stock for product %s", product.PName)
+	}
+
+	product.Quantity -= quantity
+
+	// Save the updated product back to the database
+	err = models.UpdateProductQuantity(db, *product)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func AddQuantity(db *gorm.DB, productID int, quantity int) error {
+	product, err := models.FetchProductById(productID)
+	if err != nil {
+		return err
+	}
+
+	if product.Quantity < quantity {
+		return fmt.Errorf("not enough stock for product %s", product.PName)
+	}
+
+	product.Quantity += quantity
+
+	// Save the updated product back to the database
+	err = models.UpdateProductQuantity(db, *product)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request) {
+	id, err := utils.GetIDFromPath(r)
+	if err != nil {
+		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+		return
+	}
+
+	product, err := models.FetchProductById(id)
+	if err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
+		return
+	}
+
+	response := map[string]interface{}{
+		"id":           product.ID,
+		"product_name": product.PName,
+		"description":  product.PDesc,
+		"price":        product.Price,
+		"quantity":     product.Quantity,
+	}
+
+	utils.JsonResponse(response, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
 }

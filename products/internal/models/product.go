@@ -126,7 +126,7 @@ func AddProduct(newProduct payloads.ProductRequest) (int, error) {
 	db := dbs.DB
 	newProduct.ID = utils.GenerateRandomID()
 
-	tagIds, tagErrors := CheckAndCreateProductTags(db, newProduct.Tags)
+	tagIds, tagErrors := CheckAndCreateProductTags(db, newProduct.Tags, 0)
 	if len(tagErrors) > 0 {
 		utils.SimpleLog("error", "creating tag error", tagErrors)
 		return 0, nil
@@ -156,7 +156,7 @@ func AddProduct(newProduct payloads.ProductRequest) (int, error) {
 func UpdateProduct(id int, newProduct payloads.ProductRequest, updatedFields map[string]interface{}) error {
 	db := dbs.DB
 
-	tagIds, tagErrors := CheckAndCreateProductTags(db, newProduct.Tags)
+	tagIds, tagErrors := CheckAndCreateProductTags(db, newProduct.Tags, id)
 	if len(tagErrors) > 0 {
 		utils.SimpleLog("error", "creating tag error", tagErrors)
 		return nil
@@ -257,4 +257,11 @@ func FetchProductTagsName(db *gorm.DB, productID int) ([]string, []error) {
 	}
 
 	return tagWithName, nil
+}
+
+func UpdateProductQuantity(db *gorm.DB, product payloads.ProductResponse) error {
+	if err := db.Model(&Product{}).Where("id =?", product.ID).Update("quantity", product.Quantity).Error; err != nil {
+		return err
+	}
+	return nil
 }
