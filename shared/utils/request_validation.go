@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -54,7 +53,6 @@ func GetUserIdFromPath(r *http.Request) (int, error) {
 
 func GetIDFromPath(r *http.Request) (int, error) {
 	pathVar := mux.Vars(r)
-	log.Println("here")
 	id, err := strconv.Atoi(pathVar["id"])
 	return id, err
 }
