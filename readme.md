@@ -1,3 +1,29 @@
+### Project Structure
+```plaintext
+├── cart/
+├── payment/
+├── products/
+│   ├── cmd/
+│   │   ├── uploads/
+│   │   │   └── main.go
+│   ├── dbs/
+│   │   └── connection.go
+│   ├── internal/
+│   │   ├── handlers/
+│   │   │   └── product-handler.go
+│   │   ├── models/
+│   │   │   ├── product.go
+│   │   │   └── tags.go
+│   │   ├── services/
+│   │       └── product/
+│   │           ├── filters.go
+│   │           └── services.go
+│   ├── pkg/
+│   ├── uploads/
+├── shared/
+├── users/
+```
+
 ### microservices in golang
 
 - Product Service: Manages the product catalog. It handles product information, such as name, description, price, availability, and categories.

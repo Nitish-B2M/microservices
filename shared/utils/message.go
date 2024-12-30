@@ -22,19 +22,22 @@ const (
 // ***********Product***********
 // Error messages
 const (
-	ProductNotFoundError         = "product with ID %d not found"
-	ProductDeletionError         = "error occurred while deleting product with ID %d"
-	ProductUpdateError           = "error occurred while updating product with ID %d"
-	ProductCreationError         = "error occurred while creating product"
-	InvalidProductIDError        = "invalid product ID provided"
-	InvalidProductDataError      = "invalid data provided for product creation or update"
-	InvalidProductRequest        = "invalid product request"
-	ProductUnexpectedFetchError  = "unexpected error fetching product for update"
-	ProductUnexpectedUpdateError = "unexpected error while updating product"
-	ProductTagUpdateError        = "failed to update tags for product with ID %d"
-	ProductOutOfStockError       = "product with ID %d is out of stock"
-	ProductCategoryError         = "invalid category for product with ID %d"
-	ProductPriceError            = "invalid price for product with ID %d"
+	ProductNotFoundError          = "product with ID %d not found"
+	ProductDeletionError          = "error occurred while deleting product with ID %d"
+	ProductUpdateError            = "error occurred while updating product with ID %d"
+	ProductCreationError          = "error occurred while creating product"
+	InvalidProductIDError         = "invalid product ID provided"
+	InvalidProductDataError       = "invalid data provided for product creation or update"
+	InvalidProductRequest         = "invalid product request"
+	ProductUnexpectedFetchError   = "unexpected error fetching product for update"
+	ProductUnexpectedUpdateError  = "unexpected error while updating product"
+	ProductTagUpdateError         = "failed to update tags for product with ID %d"
+	ProductOutOfStockError        = "product with ID %d is out of stock"
+	ProductCategoryError          = "invalid category for product with ID %d"
+	ProductPriceError             = "invalid price for product with ID %d"
+	ProductIDRequiredError        = "product Id is required"
+	FailedToFetchProductDetails   = "failed to fetch product details"
+	InSufficientProductStockError = "insufficient stock for product %s"
 )
 
 // Info messages
@@ -88,6 +91,8 @@ const (
 	EmailVerificationFailed    = "failed to verify email for user with ID: %d"
 	UserDeActivationFailed     = "failed to deactivate user with ID %d"
 	UserReactivationFailed     = "failed to reactivate user with ID %d"
+	EmailNotVerifiedError      = "email is not verified email: %s"
+	UserIsNotVerifiedError     = "user is not verified"
 )
 
 // Info messages
@@ -105,6 +110,8 @@ const (
 	UserAlreadyDeactivated       = "user with ID %d has already been deactivated"
 	UserDeActivationSuccessfully = "user account de-activated successfully"
 	UserReactivationSuccessfully = "user account re-activated successfully"
+	PleaseVerifyEmail            = "please verify your email"
+	RequestUserIsDeactivated     = "request user is deactivated"
 )
 
 // *************JWT*************
@@ -137,25 +144,25 @@ const (
 // ************* Cart **************
 // Errors
 const (
-	CartNotFoundError         = "payment not found for user with ID %d"
-	CartItemNotFoundError     = "payment item with ID %d not found in payment"
-	CartItemAdditionError     = "error occurred while adding item to payment"
-	CartItemUpdateError       = "error occurred while updating item in payment"
-	CartItemDeletionError     = "error occurred while deleting item from payment"
+	CartNotFoundError         = "cart not found for user with ID %d"
+	CartItemNotFoundError     = "cart item with ID %d not found in cart"
+	CartItemAdditionError     = "failed to add item to cart"
+	CartItemUpdateError       = "error occurred while updating item in cart"
+	CartItemDeletionError     = "error occurred while deleting item from cart"
 	CartOutOfStockError       = "item with ID %d is out of stock"
 	CartInvalidItemQuantity   = "invalid quantity for item with ID %d"
 	CartInvalidProductError   = "invalid product for item with ID %d"
-	CartUnexpectedFetchError  = "unexpected error fetching payment data"
-	CartUnexpectedUpdateError = "unexpected error updating payment data"
+	CartUnexpectedFetchError  = "unexpected error fetching cart data"
+	CartUnexpectedUpdateError = "unexpected error updating cart data"
 )
 
 // Info messages
 const (
-	CartFetchedSuccessfully     = "payment fetched successfully for user with ID %d"
-	CartItemAddedSuccessfully   = "item with ID %d added to payment successfully"
-	CartItemUpdatedSuccessfully = "item with ID %d updated in payment successfully"
-	CartItemDeletedSuccessfully = "item with ID %d removed from payment successfully"
-	CartCheckedOutSuccessfully  = "payment checked out successfully for user with ID %d"
+	CartFetchedSuccessfully     = "cart fetched successfully for user with ID %d"
+	CartItemAddedSuccessfully   = "item with ID %d added to cart successfully"
+	CartItemUpdatedSuccessfully = "item with ID %d updated in cart successfully"
+	CartItemDeletedSuccessfully = "item with ID %d removed from cart successfully"
+	CartCheckedOutSuccessfully  = "cart checked out successfully for user with ID %d"
 )
 
 // *************** Templates and Files ********************

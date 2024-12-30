@@ -1,4 +1,4 @@
-package user
+package services
 
 import (
 	"e-commerce-backend/shared/utils"
@@ -20,28 +20,28 @@ type Service struct {
 	DB *gorm.DB
 }
 
-type User interface {
-	AddUser(w http.ResponseWriter, r *http.Request)
-	UpdateUser(w http.ResponseWriter, r *http.Request)
-	DeleteUser(w http.ResponseWriter, r *http.Request)
-	GetAllUsers(w http.ResponseWriter, r *http.Request)
-	FetchUserById(w http.ResponseWriter, r *http.Request)
-	LoginUser(w http.ResponseWriter, r *http.Request)
-	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
-	ResetPassword(w http.ResponseWriter, r *http.Request)
-	SendVerificationEmail(w http.ResponseWriter, r *http.Request)
-	VerifyEmail(w http.ResponseWriter, r *http.Request)
-	DeActivateUser(w http.ResponseWriter, r *http.Request)
-	ActivateUser(w http.ResponseWriter, r *http.Request)
-}
-
 func NewUser(db *gorm.DB) *Service {
 	return &Service{
 		DB: db,
 	}
 }
 
-func validateAddUserRequest(w http.ResponseWriter, data models.User) bool {
+type UserInterface interface {
+	GetAllUsers(w http.ResponseWriter, r *http.Request)
+	GetUserById(w http.ResponseWriter, r *http.Request)
+	CreateUser(w http.ResponseWriter, r *http.Request)
+	UpdateUser(w http.ResponseWriter, r *http.Request)
+	DeleteUser(w http.ResponseWriter, r *http.Request)
+	DeActivateUser(w http.ResponseWriter, r *http.Request)
+	ActivateUser(w http.ResponseWriter, r *http.Request)
+	LoginUser(w http.ResponseWriter, r *http.Request)
+	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
+	ResetPassword(w http.ResponseWriter, r *http.Request)
+	SendVerificationEmail(w http.ResponseWriter, r *http.Request)
+	VerifyUserEmail(w http.ResponseWriter, r *http.Request)
+}
+
+func validateCreateUserRequest(w http.ResponseWriter, data models.User) bool {
 	var errorMessages []string
 
 	// Collect validation errors
@@ -126,7 +126,7 @@ func (db *Service) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(output, w, utils.UsersFetchedSuccessfully, http.StatusOK)
 }
 
-func (db *Service) FetchUserById(w http.ResponseWriter, r *http.Request) {
+func (db *Service) GetUserById(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodGet); !ok {
 		return
 	}
@@ -138,30 +138,45 @@ func (db *Service) FetchUserById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userService models.User
-	userResponse, err := userService.FetchUserById(db.DB, id)
+	userResponse, err := userService.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+		return
+	}
+	if !userResponse.IsActive {
+		utils.JsonResponse(map[string]interface{}{"user_id": id}, w, utils.RequestUserIsDeactivated, http.StatusForbidden)
 		return
 	}
 
 	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserFetchedSuccessfully, id), http.StatusOK)
 }
 
-func (db *Service) AddUser(w http.ResponseWriter, r *http.Request) {
+func (db *Service) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var userRequest models.User
 	if err := json.NewDecoder(r.Body).Decode(&userRequest); err != nil {
 		utils.JsonError(w, utils.InvalidUserDataError, http.StatusBadRequest, err)
 		return
 	}
 
-	if ok := validateAddUserRequest(w, userRequest); !ok {
+	if ok := validateCreateUserRequest(w, userRequest); !ok {
 		return
 	}
 
 	existingUser, err := userRequest.GetUserByEmail(db.DB, userRequest.Email)
-	if err == nil && existingUser != nil {
+	if existingUser != nil {
 		utils.JsonError(w, utils.EmailAlreadyExistsError, http.StatusConflict, nil)
 		return
+	}
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+		} else {
+			utils.JsonError(w, utils.UserCreationError, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	hashedPassword, err := utils.HashedPassword(userRequest.Password)
@@ -171,14 +186,18 @@ func (db *Service) AddUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userRequest.Password = hashedPassword
-	id, err := userRequest.AddUser(db.DB)
+	id, err := userRequest.CreateUser(db.DB)
 	if err != nil {
 		utils.JsonError(w, utils.UserCreationError, http.StatusInternalServerError, err)
 		return
 	}
 
-	userResponse, err := userRequest.FetchUserById(db.DB, id)
+	userResponse, err := userRequest.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
@@ -216,9 +235,17 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var oldUserData models.User
-	_, err = oldUserData.FetchUserById(db.DB, id)
+	_, err = oldUserData.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+		return
+	}
+	if !oldUserData.IsActive {
+		utils.JsonResponse(map[string]interface{}{"user_id": id}, w, utils.RequestUserIsDeactivated, http.StatusForbidden)
 		return
 	}
 
@@ -241,8 +268,12 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userResponse, err := oldUserData.FetchUserById(db.DB, id)
+	userResponse, err := oldUserData.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
@@ -262,8 +293,12 @@ func (db *Service) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userRequest models.User
-	_, err = userRequest.FetchUserById(db.DB, id)
+	_, err = userRequest.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
@@ -284,8 +319,12 @@ func (db *Service) DeActivateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user models.User
-	_, err = user.FetchUserById(db.DB, id)
+	_, err = user.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
@@ -312,8 +351,12 @@ func (db *Service) ActivateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user models.User
-	_, err = user.FetchUserById(db.DB, id)
+	_, err = user.GetUserById(db.DB, id)
 	if err != nil {
+		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			return
+		}
 		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
@@ -346,13 +389,22 @@ func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
 	var userRequest models.User
 	user, err := userRequest.GetUserByEmail(db.DB, loginData.Email)
 	if err != nil {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, err)
-		return
+		if strings.Contains(err.Error(), utils.RequestUserIsDeactivated) {
+		} else if ok := customEmailErrorMessage(w, err, loginData.Email); !ok {
+			return
+		}
 	}
 
 	if ok, err := utils.CompareHashedPassword(user.Password, loginData.Password); !ok {
 		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, err)
 		return
+	}
+
+	if !user.IsActive {
+		if err := user.ActivateUser(db.DB, user.ID); err != nil {
+			utils.JsonError(w, utils.InternalServerError, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	token, err := utils.GenerateJWT(user.ID, user.Email)
@@ -387,8 +439,9 @@ func (db *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) 
 	var user models.User
 	userData, err := user.GetUserByEmail(db.DB, request.Email)
 	if err != nil {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusBadRequest, err)
-		return
+		if ok := customEmailErrorMessage(w, err, request.Email); !ok {
+			return
+		}
 	}
 
 	token, err := userData.GenerateUserToken(db.DB, constants.PasswordReset)
@@ -454,12 +507,10 @@ func (db *Service) SendVerificationEmail(w http.ResponseWriter, r *http.Request)
 	var user models.User
 	userData, err := user.GetUserByEmail(db.DB, request.Email)
 	if err != nil {
-		if strings.Contains(err.Error(), "record not found") {
-			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundWithEmailError, request.Email), http.StatusNotFound, err)
+		if strings.Contains(err.Error(), utils.UserIsNotVerifiedError) {
+		} else if ok := customEmailErrorMessage(w, err, request.Email); !ok {
 			return
 		}
-		utils.JsonError(w, utils.UnexpectedDatabaseError, http.StatusInternalServerError, err)
-		return
 	}
 
 	if ok := user.CheckUserEmailAlreadyVerified(db.DB, request.Email); ok {
@@ -497,4 +548,19 @@ func (db *Service) VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.JsonResponse(map[string]interface{}{"user_id": userData.UserID}, w, utils.EmailVerifiedSuccessfully, http.StatusOK)
+}
+
+func customEmailErrorMessage(w http.ResponseWriter, err error, email string) bool {
+	if err == nil {
+		return false
+	}
+	if strings.Contains(err.Error(), "record not found") {
+		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundWithEmailError, email), http.StatusNotFound, err)
+		return false
+	} else if strings.Contains(err.Error(), "not verified") {
+		utils.JsonError(w, strings.Join([]string{fmt.Sprintf(utils.EmailNotVerifiedError, email), utils.PleaseVerifyEmail, "click on this link: http://localhost:8080/user/verify/send"}, ", "), http.StatusUnauthorized, err)
+		return false
+	}
+	utils.JsonError(w, utils.UnexpectedDatabaseError, http.StatusInternalServerError, err)
+	return false
 }
