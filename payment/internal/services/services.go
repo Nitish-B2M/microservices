@@ -1,4 +1,4 @@
-package payment
+package services
 
 import (
 	"e-commerce-backend/payment/internal/models"
