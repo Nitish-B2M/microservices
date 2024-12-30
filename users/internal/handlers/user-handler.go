@@ -2,18 +2,18 @@ package handlers
 
 import (
 	"e-commerce-backend/users/dbs"
-	"e-commerce-backend/users/internal/services/user"
+	"e-commerce-backend/users/internal/services"
 	"net/http"
 
 	"github.com/gorilla/mux"
 )
 
 func UserHandler(r *mux.Router) {
-	userService := user.NewUser(dbs.UserDB)
+	userService := services.NewUser(dbs.UserDB)
 
 	r.HandleFunc("/users", userService.GetAllUsers).Methods(http.MethodGet)
-	r.HandleFunc("/user/{id}", userService.FetchUserById).Methods(http.MethodGet)
-	r.HandleFunc("/user/add", userService.AddUser).Methods(http.MethodPost)
+	r.HandleFunc("/user/{id}", userService.GetUserById).Methods(http.MethodGet)
+	r.HandleFunc("/user/add", userService.CreateUser).Methods(http.MethodPost)
 	r.HandleFunc("/user/update/{id}", userService.UpdateUser).Methods(http.MethodPut)
 	r.HandleFunc("/user/delete/{id}", userService.DeleteUser).Methods(http.MethodDelete)
 	r.HandleFunc("/user/activate/{id}", userService.ActivateUser).Methods(http.MethodPut)

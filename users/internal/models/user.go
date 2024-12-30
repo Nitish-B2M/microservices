@@ -5,8 +5,8 @@ import (
 	"e-commerce-backend/users/dbs"
 	"e-commerce-backend/users/pkg/payloads"
 	"errors"
+	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -60,7 +60,24 @@ func InitUserSchema() {
 	}
 }
 
-func (user *User) AddUser(db *gorm.DB) (int, error) {
+type UserService interface {
+	CreateUser(db *gorm.DB) (int, error)
+	GetUserByEmail(db *gorm.DB, email string) (*User, error)
+	GetUserById(db *gorm.DB, id int) (*payloads.UserResponse, error)
+	GetAllUsers(db *gorm.DB) ([]payloads.UserResponse, error)
+	UpdateUser(db *gorm.DB, id int, updatedFields map[string]interface{}) (int, error)
+	DeleteUser(db *gorm.DB, id int) error
+	DeActivateUser(db *gorm.DB, id int) error
+	ActivateUser(db *gorm.DB, id int) error
+	GenerateUserToken(db *gorm.DB, tokenType int) (string, error)
+	ValidateAndUseToken(db *gorm.DB, token string, tokenType int) (UserToken, error)
+	ResetPassword(db *gorm.DB, id int, password string) error
+	CheckUserEmailAlreadyVerified(db *gorm.DB, email string) bool
+	VerifyUserEmail(db *gorm.DB, id int) error
+	IsEmailVerified(db *gorm.DB, email string) bool
+}
+
+func (user *User) CreateUser(db *gorm.DB) (int, error) {
 	if err := db.Create(user).Error; err != nil {
 		return 0, err
 	}
@@ -68,16 +85,19 @@ func (user *User) AddUser(db *gorm.DB) (int, error) {
 }
 
 func (user *User) GetUserByEmail(db *gorm.DB, email string) (*User, error) {
-	if err := db.Where("email = ?", email).First(&user).Error; err != nil {
-		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
-			return nil, err
-		}
+	if err := db.Where("email = ? and is_deleted =?", email, false).First(&user).Error; err != nil {
 		return nil, err
+	}
+	if !user.IsActive {
+		return user, errors.New(utils.RequestUserIsDeactivated)
+	}
+	if ok := user.IsEmailVerified(db, email); !ok {
+		return user, fmt.Errorf(utils.UserIsNotVerifiedError)
 	}
 	return user, nil
 }
 
-func (user *User) FetchUserById(db *gorm.DB, id int) (*payloads.UserResponse, error) {
+func (user *User) GetUserById(db *gorm.DB, id int) (*payloads.UserResponse, error) {
 	if err := db.Where("id =? and is_deleted =?", id, false).First(&user).Error; err != nil {
 		return nil, err
 	}
@@ -188,15 +208,21 @@ func (user *User) CheckUserEmailAlreadyVerified(db *gorm.DB, email string) bool 
 
 func (user *User) VerifyUserEmail(db *gorm.DB, id int) error {
 
-	if _, err := user.FetchUserById(db, id); err != nil {
+	if _, err := user.GetUserById(db, id); err != nil {
 		return errors.New("user not found")
 	}
 
 	if err := db.Model(&user).Where("id = ?", id).Update("is_verified", 1).Error; err != nil {
 		return err
 	}
-
 	return nil
+}
+
+func (user *User) IsEmailVerified(db *gorm.DB, email string) bool {
+	if err := db.Model(&user).Where("email = ? and is_verified = ?", email, 1).First(&User{}).Error; err != nil {
+		return false
+	}
+	return true
 }
 
 func CopyUserToUserResponse(user *User) *payloads.UserResponse {
