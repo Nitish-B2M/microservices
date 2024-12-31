@@ -7,8 +7,10 @@ import (
 	"e-commerce-backend/shared/middlewares"
 	"e-commerce-backend/shared/utils"
 	"fmt"
+	"github.com/joho/godotenv"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
 )
@@ -32,7 +34,13 @@ func main() {
 
 	handlers.ProductHandler(r)
 
-	port := "8081"
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal(".env file not found from main.go")
+	}
+	port := os.Getenv("PRODUCT_PORT")
+	if port == "" {
+		port = "8081"
+	}
 
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
