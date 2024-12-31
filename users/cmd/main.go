@@ -7,8 +7,10 @@ import (
 	"e-commerce-backend/users/internal/handlers"
 	"e-commerce-backend/users/internal/models"
 	"fmt"
+	"github.com/joho/godotenv"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
 )
@@ -21,7 +23,6 @@ func main() {
 	InitSchemas()
 
 	r := mux.NewRouter()
-	//r.Use(middlewares.AuthMiddleware)
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		utils.JsonResponse(nil, w, "Hello World", 0)
 	})
@@ -32,8 +33,13 @@ func main() {
 
 	handlers.UserHandler(r)
 
-	port := "8080"
-
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal(".env file not found from main.go")
+	}
+	port := os.Getenv("USER_PORT")
+	if port == "" {
+		port = "8080"
+	}
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
 		log.Fatalf("Server failed to start: %v", err)

@@ -7,8 +7,10 @@ import (
 	"e-commerce-backend/shared/middlewares"
 	"e-commerce-backend/shared/utils"
 	"fmt"
+	"github.com/joho/godotenv"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
 )
@@ -32,7 +34,14 @@ func main() {
 
 	handlers.PaymentHandler(r)
 
-	port := "8082"
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal(".env file not found from main.go")
+	}
+
+	port := os.Getenv("PAYMENT_PORT")
+	if port == "" {
+		port = "8084"
+	}
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
