@@ -15,9 +15,8 @@
 │   │   │   ├── product.go
 │   │   │   └── tags.go
 │   │   ├── services/
-│   │       └── product/
-│   │           ├── filters.go
-│   │           └── services.go
+│   │       ├── filters.go
+│   │       └── services.go
 │   ├── pkg/
 │   ├── uploads/
 ├── shared/
