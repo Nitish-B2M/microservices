@@ -7,13 +7,14 @@ import (
 	"e-commerce-backend/shared/utils"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/gorilla/mux"
+	"gorm.io/gorm"
 )
 
 type Service struct {
@@ -43,6 +44,13 @@ func verifyUserUsingIdAndCtxId(r *http.Request) (int, bool) {
 		return 0, false
 	}
 	return userID, true
+}
+
+func getCartIdFromParams(r *http.Request) (int, bool) {
+	vars := mux.Vars(r)
+	id := vars["cart_id"]
+	cartId, _ := strconv.Atoi(id)
+	return cartId, true
 }
 
 func fetchProductUsingMicroservices(productId int) (map[string]interface{}, error) {
@@ -90,7 +98,7 @@ func (db *Service) GetCartItemByUserID(w http.ResponseWriter, r *http.Request) {
 	var cart models.Cart
 	cartItems, err := cart.GetCartByUserId(db.DB, userId)
 	if err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.CartNotFoundError, userId), http.StatusNotFound, err)
+		utils.JsonError(w, fmt.Sprintf(utils.UserCartNotFoundError, userId), http.StatusNotFound, err)
 		return
 	}
 
@@ -142,11 +150,6 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 	var cartResp payloads.CartResponse
 	var errorMsg []error
 
-	// go routine
-	go StartProductUpdateQuantityWorker(token)
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
 	for _, item := range req.Items {
 		product, err := fetchProductUsingMicroservices(item.ProductID)
 		if err != nil || product == nil {
@@ -188,15 +191,7 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 			Product:     product,
 			Price:       price,
 		}
-		// initialize channel with task variable(this will update quantity of product in product table)
-		task := UpdateTask{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-			Method:    "Subtract",
-		}
 
-		UpdateChannel <- task
-		log.Printf(constants.TaskForProductPushedToChannel, item.ProductID)
 		cartResp.Items = append(cartResp.Items, cartRespItem)
 	}
 
@@ -236,8 +231,6 @@ func (db *Service) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 	//response
 	var cartResp payloads.CartResponse
 
-	go StartProductUpdateQuantityWorker(token)
-
 	for _, item := range req.Items {
 		var cart models.Cart
 		if err := cart.GetCartByCartId(db.DB, item.Id); err != nil {
@@ -266,14 +259,6 @@ func (db *Service) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 			Price:    price,
 		}
 
-		// initialize channel with task variable(this will update quantity of product in product table)
-		task := UpdateTask{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-			Method:    "Add",
-		}
-		UpdateChannel <- task
-		log.Printf(constants.TaskForProductPushedToChannel, item.ProductID)
 		cartResp.Items = append(cartResp.Items, cartRespItem)
 	}
 	utils.JsonResponse(cartResp, w, constants.ItemsRemoveFromCart, http.StatusCreated)
@@ -291,5 +276,96 @@ func (db *Service) Checkout(w http.ResponseWriter, r *http.Request) {
 		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
 		return
 	}
+
+	var cart models.Cart
+	carts, err := cart.GetCartByUserId(db.DB, userId)
+	if err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.UserCartNotFoundError, userId), http.StatusNotFound, err)
+		return
+	}
+
+	if len(carts) == 0 {
+		utils.JsonError(w, "Cart is empty", http.StatusBadRequest, nil)
+		return
+	}
+
+	err = db.ValidateCart(carts)
+	if err != nil {
+		utils.JsonError(w, "Cart validation failed", http.StatusBadRequest, err)
+		return
+	}
+}
+
+func (db *Service) ValidateCart(cartItems []models.Cart) error {
+	// Loop through the cart items and validate each product
+	for _, item := range cartItems {
+		// Call Product Microservice to check product availability
+		available, err := db.CheckProductStock(item.ProductId, item.Quantity)
+		if err != nil {
+			return fmt.Errorf("error checking stock for product %s: %v", item.ProductId, err)
+		}
+		if !available {
+			return fmt.Errorf("product %s is out of stock", item.ProductId)
+		}
+	}
+
+	// Optionally, validate other cart details, like pricing, discount codes, etc.
+	return nil
+}
+
+// CheckProductStock makes an HTTP request to the Product Microservice to validate stock levels
+func (db *Service) CheckProductStock(productId int, quantity int) (bool, error) {
+	// Define the URL of the Product Microservice (for example)
+	url := fmt.Sprintf(constants.ProductMicroserviceGetProductCall, productId)
+	resp, err := http.Get(url)
+	if err != nil {
+		return false, fmt.Errorf("failed to contact Product Microservice: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if the response is valid
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("received invalid response from Product Microservice: %v", resp.Status)
+	}
+
+	// Decode the response
+	var product map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&product); err != nil {
+		return false, fmt.Errorf("failed to decode response from Product Microservice: %v", err)
+	}
+
+	// Check if the product is in stock
+	stock := int(product["quantity"].(float64))
+
+	return stock >= quantity, nil
+}
+
+func (db *Service) GetCartByCartId(w http.ResponseWriter, r *http.Request) {
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, nil)
+		return
+	}
+	token = strings.TrimPrefix(token, "Bearer ")
+	userId, ok := verifyUserUsingIdAndCtxId(r)
+	if !ok {
+		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
+		return
+	}
+
+	cartId, ok := getCartIdFromParams(r)
+	if !ok {
+		utils.JsonError(w, utils.CartIdNotProvided, http.StatusBadRequest, nil)
+		return
+	}
+	log.Println("cartId:", cartId, "userId:", userId)
+
+	var cart models.Cart
+	if err := cart.GetCartItemByCartAndUserId(db.DB, userId, cartId); err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.CartItemNotFoundError, cartId), http.StatusNotFound, err)
+		return
+	}
+	log.Println("GetCartByCartItemByCartId:", cart)
+	utils.JsonResponse(cart, w, utils.CartFetchedSuccessfully, http.StatusOK)
 
 }

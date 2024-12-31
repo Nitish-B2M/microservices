@@ -83,6 +83,13 @@ func (c *Cart) GetCartByUserId(db *gorm.DB, userId int) ([]Cart, error) {
 	return cart, nil
 }
 
+func (c *Cart) GetCartItemByCartAndUserId(db *gorm.DB, userId int, cartId int) error {
+	if err := db.Where("id =? and user_id =?", cartId, userId).First(&c).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *Cart) GetCartByCartId(db *gorm.DB, cartId int) error {
 	if err := db.Where("id=?", cartId).First(&c).Error; err != nil {
 		if strings.EqualFold(err.Error(), gorm.ErrRecordNotFound.Error()) {
