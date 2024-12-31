@@ -2,6 +2,9 @@ package utils
 
 import (
 	"fmt"
+	"github.com/joho/godotenv"
+	"log"
+	"os"
 	"reflect"
 )
 
@@ -26,4 +29,27 @@ func MapStructFields(src interface{}, dest interface{}) error {
 		}
 	}
 	return nil
+}
+
+func GetProductMicroserviceLink(extra string) string {
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	productBaseUrl := "http://localhost:" + os.Getenv("PRODUCT_PORT") + "/product"
+	if extra != "" {
+		productBaseUrl = productBaseUrl + extra
+	}
+	return productBaseUrl
+}
+
+func GetCartMicroserviceLink(extra string) string {
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	productBaseUrl := "http://localhost:" + os.Getenv("CART_PORT") + "/user/%d/cart"
+	if extra != "" {
+		productBaseUrl = productBaseUrl + extra
+	}
+	return productBaseUrl
 }
