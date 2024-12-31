@@ -38,6 +38,7 @@ const (
 	ProductIDRequiredError        = "product Id is required"
 	FailedToFetchProductDetails   = "failed to fetch product details"
 	InSufficientProductStockError = "insufficient stock for product %s"
+	ErrorProductMicroservices     = "error occurred while calling product microservice"
 )
 
 // Info messages
@@ -144,16 +145,19 @@ const (
 // ************* Cart **************
 // Errors
 const (
-	CartNotFoundError         = "cart not found for user with ID %d"
-	CartItemNotFoundError     = "cart item with ID %d not found in cart"
-	CartItemAdditionError     = "failed to add item to cart"
-	CartItemUpdateError       = "error occurred while updating item in cart"
-	CartItemDeletionError     = "error occurred while deleting item from cart"
-	CartOutOfStockError       = "item with ID %d is out of stock"
-	CartInvalidItemQuantity   = "invalid quantity for item with ID %d"
-	CartInvalidProductError   = "invalid product for item with ID %d"
-	CartUnexpectedFetchError  = "unexpected error fetching cart data"
-	CartUnexpectedUpdateError = "unexpected error updating cart data"
+	CartIdNotFoundError          = "cart with Id %d not found"
+	UserCartNotFoundError        = "cart not found for user with userId %d"
+	CartItemNotFoundError        = "cart item with cartId %d not found in cart"
+	CartItemAdditionError        = "failed to add item to cart"
+	CartItemUpdateError          = "error occurred while updating item in cart"
+	CartItemDeletionError        = "error occurred while deleting item from cart"
+	CartOutOfStockError          = "item with ID %d is out of stock"
+	CartInvalidItemQuantity      = "invalid quantity for item with ID %d"
+	CartInvalidProductError      = "invalid product for item with ID %d"
+	CartUnexpectedFetchError     = "unexpected error fetching cart data"
+	CartUnexpectedUpdateError    = "unexpected error updating cart data"
+	ErrorCallingCartMicroservice = "error occurred while calling cart microservice"
+	CartIdNotProvided            = "cart ID not provided"
 )
 
 // Info messages

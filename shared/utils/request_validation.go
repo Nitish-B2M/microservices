@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/mux"
 	"net/http"
 	"regexp"
@@ -66,12 +67,6 @@ func CheckRequestMethod(w http.ResponseWriter, r *http.Request, expectedMethod s
 }
 
 func GetTokenFromPath(r *http.Request) (string, error) {
-	//token := r.Header.Get("Authorization")
-	//if token == "" {
-	//	return "", errors.New("no token")
-	//}
-	//return token, nil
-
 	parts := strings.Split(r.URL.Path, "/")
 	return parts[len(parts)-1], nil
 }
@@ -183,4 +178,20 @@ func isDomainValid(email string) bool {
 	}
 	domain := parts[1]
 	return len(domain) > 3 && strings.Contains(domain, ".")
+}
+
+func GetTokenFromRequestHeader(r *http.Request) string {
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		return ""
+	}
+	return token
+}
+
+func GetTokenFromRequestUsingGin(c *gin.Context) string {
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		return ""
+	}
+	return token
 }

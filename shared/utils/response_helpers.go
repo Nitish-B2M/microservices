@@ -2,6 +2,8 @@ package utils
 
 import (
 	"encoding/json"
+	"github.com/gin-gonic/gin"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -22,12 +24,7 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 		return
 	}
 
-	res1 := ""
-	if len(string(res)) > 100 {
-		res1 = strings.TrimSpace(string(res[:100])) + "...."
-	} else {
-		res1 = string(res)
-	}
+	res1 := shortResponseData(res)
 	LogInfo("sending response", map[string]interface{}{"response": res1})
 
 	resp := map[string]interface{}{
@@ -59,12 +56,7 @@ func JsonResponseWithError(data interface{}, w http.ResponseWriter, message stri
 		return
 	}
 
-	res1 := ""
-	if len(string(res)) > 100 {
-		res1 = strings.TrimSpace(string(res[:100])) + "...."
-	} else {
-		res1 = string(res)
-	}
+	res1 := shortResponseData(res)
 	LogInfo("sending response2", map[string]interface{}{"response": res1, "errors": errors})
 
 	var errList []string
@@ -102,4 +94,60 @@ func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err e
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": message, "errorDetail": err.Error()})
+}
+
+func shortResponseData(message []byte) string {
+	res1 := ""
+	res := string(message)
+	if len(res) > 100 {
+		res1 = strings.TrimSpace(res[:100]) + "...."
+	} else {
+		res1 = res
+	}
+	return res1
+}
+
+func GinError(c *gin.Context, message string, status int, err error) {
+	LogError(message, map[string]interface{}{"error": err, "status": status})
+	c.JSON(status, gin.H{
+		"message": message,
+	})
+}
+
+func GinErrorWithExtra(c *gin.Context, message string, status int, err error) {
+	LogError(message, map[string]interface{}{"error": err})
+	c.JSON(status, gin.H{
+		"message":     message,
+		"errorDetail": err.Error(),
+	})
+}
+
+func GinResponse(data interface{}, c *gin.Context, message string, status int) {
+	res, err := json.Marshal(data)
+	if err != nil {
+		LogError("Error marshalling response data", map[string]interface{}{"error": err})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to process response data"})
+		return
+	}
+
+	res1 := shortResponseData(res)
+
+	LogInfo("sending response", map[string]interface{}{"response": res1})
+	if status == 0 {
+		status = http.StatusOK
+	}
+
+	c.JSON(status, gin.H{
+		"message": message,
+		"data":    data,
+	})
+}
+
+func ParseJSON(data []byte, v interface{}) error {
+	err := json.Unmarshal(data, v)
+	if err != nil {
+		log.Println("Error unmarshalling JSON:", err)
+		return err
+	}
+	return nil
 }

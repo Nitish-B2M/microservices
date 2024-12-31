@@ -3,6 +3,7 @@ package middlewares
 import (
 	"context"
 	"e-commerce-backend/shared/utils"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"strings"
 
@@ -46,4 +47,46 @@ func AuthMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func GinAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization token required"})
+			c.Abort()
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenString == authHeader { // If no "Bearer" prefix
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header"})
+			c.Abort()
+			return
+		}
+
+		token, err := utils.ValidateJWT(tokenString)
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+			c.Abort()
+			return
+		}
+
+		userID, ok := claims["user_id"].(float64)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+			c.Abort()
+			return
+		}
+
+		c.Set("userID", int(userID))
+		c.Next()
+	}
 }
