@@ -17,6 +17,7 @@ const (
 	UnauthorizedError    = "unauthorized access"
 	ForbiddenError       = "access forbidden"
 	FailedToSendResponse = "failed to send response"
+	InvalidJSONBody      = "invalid JSON body"
 )
 
 // ***********Product***********
@@ -182,4 +183,9 @@ const (
 // InsufficientPermissionsError Permission related Errors
 const (
 	InsufficientPermissionsError = "insufficient permissions to access this resource"
+)
+
+// *************** Order *****************
+const (
+	OrderSuccessful = "order successfully created"
 )

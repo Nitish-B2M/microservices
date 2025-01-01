@@ -53,3 +53,14 @@ func GetCartMicroserviceLink(extra string) string {
 	}
 	return productBaseUrl
 }
+
+func GetPaymentMicroserviceLink(extra string) string {
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	paymentBaseUrl := "http://localhost:" + os.Getenv("PAYMENT_PORT") + "/order/%d/payment"
+	if extra != "" {
+		paymentBaseUrl = paymentBaseUrl + extra
+	}
+	return paymentBaseUrl
+}
