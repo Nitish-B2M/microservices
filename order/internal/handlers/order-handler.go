@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"e-commerce-backend/order/dbs"
 	"e-commerce-backend/order/internal/services"
-	"e-commerce-backend/payment/dbs"
 	"e-commerce-backend/shared/middlewares"
 	"github.com/gin-gonic/gin"
 )
