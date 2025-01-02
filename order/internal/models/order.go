@@ -8,42 +8,18 @@ import (
 	"time"
 )
 
-type OldOrder struct {
-	Id                 int             `json:"id"`
-	UserId             int             `json:"user_id"`
-	Carts              json.RawMessage `json:"carts"`
-	TotalPrice         float64         `json:"total_price"`
-	IsPay              bool            `json:"is_pay"`
-	ShippingAddress    string          `json:"shipping_address"`
-	ShippingMethod     string          `json:"shipping_method"`
-	BillingAddress     string          `json:"billing_address"`
-	PaymentMethod      string          `json:"payment_method"`
-	PaymentTransaction string          `json:"payment_transaction"`
-	OrderDate          string          `json:"order_date"`
-	EstimatedDelivery  string          `json:"estimated_delivery"`
-	OrderStatus        string          `json:"order_status"`
-	PromoCode          string          `json:"promo_code,omitempty"`
-	Discount           float64         `json:"discount,omitempty"`
-	Tax                float64         `json:"tax"`
-}
-
 type Order struct {
-	OrderID         int        `gorm:"primaryKey;autoIncrement" json:"order_id"`  // Unique identifier for the order
-	CustomerID      int        `gorm:"not null" json:"customer_id"`               // Foreign key linking to the customer
-	OrderDate       time.Time  `gorm:"type:timestamp;not null" json:"order_date"` // Date and time when the order was placed
-	ShippingAddress string     `gorm:"not null" json:"shipping_address"`          // Address where the order will be shipped
-	BillingAddress  string     `gorm:"not null" json:"billing_address"`           // Address used for billing
-	TotalAmount     float64    `gorm:"not null" json:"total_amount"`              // Total cost of the order
-	PaymentMethod   string     `gorm:"not null" json:"payment_method"`            // Payment method used (e.g., credit card)
-	PaymentStatus   string     `gorm:"not null" json:"payment_status"`            // Payment status (e.g., Pending, Completed)
-	OrderStatus     string     `gorm:"not null" json:"order_status"`              // Order status (e.g., Pending, Shipped)
-	ShippingMethod  string     `gorm:"not null" json:"shipping_method"`           // Shipping method (e.g., Standard, Express)
-	TrackingNumber  string     `gorm:"default:null" json:"tracking_number"`       // Tracking number for the shipment
-	DiscountCode    string     `gorm:"default:null" json:"discount_code"`         // Discount code applied (if any)
-	TaxAmount       float64    `gorm:"not null" json:"tax_amount"`                // Tax amount applied to the order
-	CreatedAt       time.Time  `gorm:"autoCreateTime;not null" json:"created_at"` // Timestamp when the order was created
-	UpdatedAt       time.Time  `gorm:"autoUpdateTime;not null" json:"updated_at"` // Timestamp when the order was last updated
-	CancelledAt     *time.Time `gorm:"default:null" json:"cancelled_at"`          // Timestamp when the order was canceled (nullable)
+	OrderID        int       `gorm:"primaryKey;autoIncrement" json:"order_id"`
+	CustomerID     int       `gorm:"not null" json:"customer_id"`
+	IsPaid         bool      `json:"is_paid"`
+	TotalAmount    float64   `gorm:"not null" json:"total_amount"`
+	Carts          string    `gorm:"type:json" json:"carts"`
+	OrderStatus    int       `json:"order_status" gorm:"default:0"`
+	DiscountCode   string    `gorm:"default:null" json:"discount_code"`
+	TaxAmount      float64   `json:"tax_amount"`
+	ShippingMethod string    `json:"shipping_method"`
+	CreatedAt      time.Time `json:"-" gorm:"type:datetime;default:CURRENT_TIMESTAMP"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"type:datetime;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
 }
 
 func InitOrderSchemas() {

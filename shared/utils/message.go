@@ -189,3 +189,12 @@ const (
 const (
 	OrderSuccessful = "order successfully created"
 )
+
+const (
+	OrderStatusPending    = "Pending"
+	OrderStatusProcessing = "Processing"
+	OrderStatusShipped    = "Shipped"
+	OrderStatusDelivered  = "Delivered"
+	OrderStatusCancelled  = "Cancelled"
+	OrderStatusFailed     = "Failed"
+)

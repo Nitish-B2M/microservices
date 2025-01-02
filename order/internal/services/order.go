@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Service struct {
@@ -65,6 +66,7 @@ func (db *Service) Checkout(c *gin.Context) {
 		return
 	}
 	carts := body.Carts
+	var cartIds []int
 	totalPrice := 0.0
 	var order models.Order
 
@@ -80,7 +82,6 @@ func (db *Service) Checkout(c *gin.Context) {
 			utils.GinError(c, fmt.Sprintf(utils.CartItemNotFoundError, cartId), http.StatusNotFound, err)
 			return
 		}
-		log.Println(cart)
 		cartData := cart["data"].(map[string]interface{})
 
 		productId := int(cartData["product_id"].(float64))
@@ -98,38 +99,36 @@ func (db *Service) Checkout(c *gin.Context) {
 		eachTotalPrice := calculatePrice(productData["price"].(float64), int(cartData["quantity"].(float64)))
 		totalPrice += eachTotalPrice
 
-		cartData2 := map[string]interface{}{
-			"cart_id":     2,
-			"product_id":  1002,
-			"quantity":    1,
-			"price":       20.0,
-			"total_price": 20.0,
-		}
-
-		cartJSON2, err := json.Marshal(cartData2)
-		if err != nil {
-			log.Fatal("Error marshaling cart 2:", err)
-		}
-
-		cartss := append([]json.RawMessage{}, cartJSON2)
-		// Now append cartJSON, which is a []byte, to order.Carts
-		order.Carts, err = json.Marshal(cartss)
-		if err != nil {
-			log.Fatal("Error marshaling order 1:", err)
-		}
+		cartIds = append(cartIds, cartId)
 	}
 
-	order.UserId = userId
-	order.TotalPrice = totalPrice
-	log.Println("CreateOrder", order)
-	//create order
-	if err := order.CreateOrder(db.DB); err != nil {
+	cartItemsJSON, err := json.Marshal(cartIds)
+	if err != nil {
 		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
 		return
 	}
-	log.Println(order)
+	//temporary basis
+	order.OrderID = 1
+	order.CreatedAt = time.Now()
+	order.UpdatedAt = time.Now()
 
-	proceedForPayment(c, order)
+	order.CustomerID = userId
+	order.TotalAmount = totalPrice
+	order.Carts = string(cartItemsJSON)
+	log.Println("CreateOrder", order)
+	//create order
+	//if err := order.CreateOrder(db.DB); err != nil {
+	//	utils.GinError(c, err.Error(), http.StatusBadRequest, err)
+	//	return
+	//}
+	//log.Println(order)
+
+	ok, err := proceedForPayment(c, order)
+	if err != nil {
+		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+	_ = ok
 
 	utils.GinResponse(order, c, utils.OrderSuccessful, http.StatusOK)
 }
@@ -250,10 +249,10 @@ func calculatePrice(price float64, quantity int) float64 {
 func proceedForPayment(c *gin.Context, order models.Order) (bool, error) {
 	links := constants.MicroserviceLinks()
 	paymentLink := links["paymentMSInitiateCallLink"]
+	paymentMicroserviceCall := fmt.Sprintf(paymentLink, order.OrderID)
+	log.Println(paymentMicroserviceCall)
 
-	paymentMicroserviceCall := fmt.Sprintf(paymentLink, order.Id)
-
-	payload := map[string]interface{}{"user_id": order.UserId, "price": order.TotalPrice, "order_id": order.Id}
+	payload := map[string]interface{}{"user_id": order.CustomerID, "price": order.TotalAmount, "order_id": order.OrderID}
 	jsonPayload, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, paymentMicroserviceCall, bytes.NewBuffer(jsonPayload))
 	if err != nil {
@@ -270,6 +269,7 @@ func proceedForPayment(c *gin.Context, order models.Order) (bool, error) {
 		return false, fmt.Errorf("failed to send request to microservice: %v", err)
 	}
 	defer resp.Body.Close()
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return false, fmt.Errorf("failed to read response body")
@@ -279,7 +279,10 @@ func proceedForPayment(c *gin.Context, order models.Order) (bool, error) {
 		return false, fmt.Errorf("failed to parse response body")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("microservice responded with status code %d", resp.StatusCode)
+		if resp.StatusCode == http.StatusCreated {
+		} else {
+			return false, fmt.Errorf("microservice responded with status code %d", resp.StatusCode)
+		}
 	}
 
 	return true, nil
