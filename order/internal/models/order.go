@@ -71,3 +71,10 @@ func (o *Order) CreateOrder(db *gorm.DB) error {
 	}
 	return nil
 }
+
+func (o *Order) UpdateOrder(db *gorm.DB) error {
+	if err := db.Save(&o).Error; err != nil {
+		return err
+	}
+	return nil
+}

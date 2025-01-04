@@ -1,4 +1,4 @@
-package product
+package services
 
 import (
 	"e-commerce-backend/products/internal/models"
