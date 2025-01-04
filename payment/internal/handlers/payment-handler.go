@@ -12,8 +12,6 @@ import (
 func PaymentHandler(r *mux.Router) {
 	paymentService := services.NewPaymentService(dbs.DB)
 
-	r.Handle("/user/{id}/payment", middlewares.AuthMiddleware(http.HandlerFunc(paymentService.GetPayment))).Methods("POST")
-	r.Handle("/user/{id}/payment/add", middlewares.AuthMiddleware(http.HandlerFunc(paymentService.AddToPayment))).Methods("POST")
-	r.Handle("/user/{id}/payment/update", middlewares.AuthMiddleware(http.HandlerFunc(paymentService.UpdatePayment))).Methods("POST")
-	r.Handle("/user/{id}/payment/delete", middlewares.AuthMiddleware(http.HandlerFunc(paymentService.DeletePayment))).Methods("POST")
+	r.Handle("/order/{id}/payment", middlewares.AuthMiddleware(http.HandlerFunc(paymentService.GetPayment))).Methods("POST")
+	r.Handle("/order/{id}/payment/initiate", middlewares.AuthMiddleware(http.HandlerFunc(paymentService.InitiatePayment))).Methods("POST")
 }

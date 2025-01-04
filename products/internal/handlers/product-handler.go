@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"e-commerce-backend/products/dbs"
-	"e-commerce-backend/products/internal/services/product"
+	"e-commerce-backend/products/internal/services"
 	"e-commerce-backend/shared/middlewares"
 	"net/http"
 
@@ -10,7 +10,7 @@ import (
 )
 
 func ProductHandler(r *mux.Router) {
-	productService := product.NewProduct(dbs.DB)
+	productService := services.NewProduct(dbs.DB)
 
 	// implementing mux router
 	r.Handle("/product", http.HandlerFunc(productService.GetProducts)).Methods(http.MethodGet)

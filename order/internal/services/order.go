@@ -115,22 +115,39 @@ func (db *Service) Checkout(c *gin.Context) {
 	order.CustomerID = userId
 	order.TotalAmount = totalPrice
 	order.Carts = string(cartItemsJSON)
-	log.Println("CreateOrder", order)
 	//create order
-	//if err := order.CreateOrder(db.DB); err != nil {
-	//	utils.GinError(c, err.Error(), http.StatusBadRequest, err)
-	//	return
-	//}
-	//log.Println(order)
+	if err := order.CreateOrder(db.DB); err != nil {
+		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+	log.Println("Order created: ", order)
 
-	ok, err := proceedForPayment(c, order)
+	payResp, err := proceedForPayment(c, order)
 	if err != nil {
 		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
 		return
 	}
-	_ = ok
 
-	utils.GinResponse(order, c, utils.OrderSuccessful, http.StatusOK)
+	if payResp["data"] != nil {
+		respData := payResp["data"].(map[string]interface{})
+		paymentId := int(respData["payment_id"].(float64))
+		if paymentId > 0 {
+			order.IsPaid = true
+			//	update payment
+			if err := order.UpdateOrder(db.DB); err != nil {
+				utils.GinError(c, "while updating"+err.Error(), http.StatusBadRequest, err)
+				return
+			}
+		}
+	}
+
+	//invoices.Invoices()
+
+	resp := map[string]interface{}{
+		"data": order,
+	}
+
+	utils.GinResponse(resp, c, utils.OrderSuccessful, http.StatusOK)
 }
 
 func fetchCartDetails(c *gin.Context, userId, cartId int) (map[string]interface{}, error) {
@@ -246,44 +263,44 @@ func calculatePrice(price float64, quantity int) float64 {
 	return total
 }
 
-func proceedForPayment(c *gin.Context, order models.Order) (bool, error) {
+func proceedForPayment(c *gin.Context, order models.Order) (map[string]interface{}, error) {
 	links := constants.MicroserviceLinks()
 	paymentLink := links["paymentMSInitiateCallLink"]
 	paymentMicroserviceCall := fmt.Sprintf(paymentLink, order.OrderID)
 	log.Println(paymentMicroserviceCall)
 
-	payload := map[string]interface{}{"user_id": order.CustomerID, "price": order.TotalAmount, "order_id": order.OrderID}
+	payload := map[string]interface{}{"customer_id": order.CustomerID, "total_amount": order.TotalAmount, "order_id": order.OrderID}
 	jsonPayload, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, paymentMicroserviceCall, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return false, fmt.Errorf("failed to create request to microservice: %v", err)
+		return nil, fmt.Errorf("failed to create request to microservice: %v", err)
 	}
 	token := utils.GetTokenFromRequestUsingGin(c)
 	if token == "" {
-		return false, fmt.Errorf("missing authorization header")
+		return nil, fmt.Errorf("missing authorization header")
 	}
 	req.Header.Set("Authorization", token)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("failed to send request to microservice: %v", err)
+		return nil, fmt.Errorf("failed to send request to microservice: %v", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("failed to read response body")
+		return nil, fmt.Errorf("failed to read response body")
 	}
 	var response map[string]interface{}
 	if err := utils.ParseJSON(body, &response); err != nil {
-		return false, fmt.Errorf("failed to parse response body")
+		return nil, fmt.Errorf("failed to parse response body")
 	}
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusCreated {
 		} else {
-			return false, fmt.Errorf("microservice responded with status code %d", resp.StatusCode)
+			return nil, fmt.Errorf("microservice responded with status code %d", resp.StatusCode)
 		}
 	}
 
-	return true, nil
+	return response, nil
 }

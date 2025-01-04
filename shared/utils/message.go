@@ -198,3 +198,19 @@ const (
 	OrderStatusCancelled  = "Cancelled"
 	OrderStatusFailed     = "Failed"
 )
+
+const (
+	PaymentFailed           = "payment failed"
+	PaymentCancelled        = "payment cancelled"
+	PaymentStatusPaid       = "paid"
+	PaymentStatusRejected   = "rejected"
+	PaymentStatusCanceled   = "canceled"
+	PaymentStatusPending    = "pending"
+	PaymentStatusFailed     = "failed"
+	InvalidPaymentRequest   = "invalid payment request"
+	PaymentValidationFailed = "payment validation failed"
+)
+
+const (
+	PaymentSuccessful = "payment successfully created"
+)
