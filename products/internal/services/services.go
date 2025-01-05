@@ -409,6 +409,7 @@ func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request)
 		"description":  product.PDesc,
 		"price":        product.Price,
 		"quantity":     product.Quantity,
+		"discount":     product.Discount,
 	}
 
 	utils.JsonResponse(response, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
