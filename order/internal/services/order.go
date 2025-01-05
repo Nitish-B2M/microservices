@@ -5,6 +5,7 @@ import (
 	"e-commerce-backend/order/internal/models"
 	"e-commerce-backend/order/pkg/constants"
 	"e-commerce-backend/order/pkg/payloads"
+	"e-commerce-backend/shared/invoices"
 	"e-commerce-backend/shared/utils"
 	"encoding/json"
 	"fmt"
@@ -65,6 +66,10 @@ func (db *Service) Checkout(c *gin.Context) {
 		utils.GinError(c, utils.InvalidJSONBody, http.StatusBadRequest, err)
 		return
 	}
+
+	//invoice list
+	var invoiceList invoices.Invoice
+
 	carts := body.Carts
 	var cartIds []int
 	totalPrice := 0.0
@@ -96,11 +101,20 @@ func (db *Service) Checkout(c *gin.Context) {
 			return
 		}
 
-		eachTotalPrice := calculatePrice(productData["price"].(float64), int(cartData["quantity"].(float64)))
+		//calculating individual product price
+		eachTotalPrice := calculatePrice(productData["price"].(float64), productData["discount"].(float64), int(cartData["quantity"].(float64)))
 		totalPrice += eachTotalPrice
 
 		cartIds = append(cartIds, cartId)
+
+		//invoice data
+		var invoiceItem invoices.InvoiceItem
+		appendCartToInvoiceItem(&invoiceItem, cartData, productData, eachTotalPrice)
+		invoiceList.InvoiceItemList = append(invoiceList.InvoiceItemList, invoiceItem)
 	}
+
+	//adding default tax(18%)
+	taxAmt, totalPrice := calculateTotalWithTax(totalPrice)
 
 	cartItemsJSON, err := json.Marshal(cartIds)
 	if err != nil {
@@ -141,13 +155,59 @@ func (db *Service) Checkout(c *gin.Context) {
 		}
 	}
 
-	//invoices.Invoices()
-
-	resp := map[string]interface{}{
-		"data": order,
+	userData, err := fetchUserDetails(c, userId)
+	if err != nil {
+		utils.LogError("from order services: Failed to fetch user data", map[string]interface{}{"error": err.Error()})
+		return
 	}
 
-	utils.GinResponse(resp, c, utils.OrderSuccessful, http.StatusOK)
+	//send data to invoice generator
+	GenerateOrderInvoice(order, userData, invoiceList, taxAmt, totalPrice)
+
+	utils.GinResponse(order, c, utils.OrderSuccessful, http.StatusOK)
+}
+
+func fetchUserDetails(c *gin.Context, userId int) (map[string]interface{}, error) {
+	links := constants.MicroserviceLinks()
+	userLinkById := links["userMSCallByIdLink"]
+
+	userMicroserviceCall := fmt.Sprintf(userLinkById, userId)
+	log.Println(userMicroserviceCall)
+	req, err := http.NewRequest("GET", userMicroserviceCall, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to user microservices. error %w", err)
+	}
+
+	token := utils.GetTokenFromRequestUsingGin(c)
+	req.Header.Add("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to user microservices. error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body. error: %w", err)
+	}
+
+	var userDetails map[string]interface{}
+	err = json.Unmarshal(body, &userDetails)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response body. error: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			if strings.Contains(userDetails["error"].(string), "not found") {
+				return nil, fmt.Errorf(userDetails["error"].(string))
+			}
+		}
+		return nil, fmt.Errorf("failed to fetch user details. error: %s", resp.Status)
+	}
+
+	userDetails = userDetails["data"].(map[string]interface{})
+	return userDetails, nil
 }
 
 func fetchCartDetails(c *gin.Context, userId, cartId int) (map[string]interface{}, error) {
@@ -176,13 +236,12 @@ func fetchCartDetails(c *gin.Context, userId, cartId int) (map[string]interface{
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		//utils.GinErrorWithExtra(c, "utils.ErrorReadingResponseBody", http.StatusInternalServerError, err)
-		return nil, fmt.Errorf(utils.ErrorCallingCartMicroservice)
+		return nil, fmt.Errorf(utils.ErrorCallingCartMicroservice) //change error message
 	}
 
 	var cart map[string]interface{}
 	if err := utils.ParseJSON(body, &cart); err != nil {
-		return nil, fmt.Errorf("failed to parse cart details")
+		return nil, fmt.Errorf("failed to parse cart details") // add each error message into message file
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -258,9 +317,18 @@ func verifyQuantity(requestQuantity, actualQuantity int) bool {
 	return false
 }
 
-func calculatePrice(price float64, quantity int) float64 {
-	total := price * float64(quantity)
+func calculatePrice(price, discount float64, quantity int) float64 {
+	p := price * float64(quantity)
+	discountAmt := p * (discount / 100)
+	total := p - discountAmt
 	return total
+}
+
+func calculateTotalWithTax(totalAmt float64) (float64, float64) {
+	taxPct := 18
+	tax := float64(taxPct / 100)
+	taxAmt := totalAmt * tax
+	return taxAmt, totalAmt - taxAmt
 }
 
 func proceedForPayment(c *gin.Context, order models.Order) (map[string]interface{}, error) {
@@ -303,4 +371,13 @@ func proceedForPayment(c *gin.Context, order models.Order) (map[string]interface
 	}
 
 	return response, nil
+}
+
+func appendCartToInvoiceItem(invoice *invoices.InvoiceItem, cart, product map[string]interface{}, itemTotalPrice float64) {
+	invoice.Total = itemTotalPrice
+	invoice.Quantity = int(cart["quantity"].(float64))
+	invoice.Price = product["price"].(float64)
+	invoice.Description = product["description"].(string)
+	invoice.Item = product["product_name"].(string)
+	invoice.DiscountedPrice = product["discount"].(float64)
 }
