@@ -64,3 +64,14 @@ func GetPaymentMicroserviceLink(extra string) string {
 	}
 	return paymentBaseUrl
 }
+
+func GetUserMicroserviceLink(extra string) string {
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Fatal("Error loading .env file from common.go")
+	}
+	userBaseUrl := "http://localhost:" + os.Getenv("USER_PORT") + "/user"
+	if extra != "" {
+		userBaseUrl = userBaseUrl + extra
+	}
+	return userBaseUrl
+}

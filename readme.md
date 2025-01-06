@@ -1,11 +1,66 @@
+## Project Setup
+**1.** Clone this repo (https method)
+```text
+git clone https://github.com/NitishB2M/microservices.git
+```
+**2.** Move to clone directory
+```text
+cd microservices
+```
+**3.** Run below command
+```text
+go mod tidy
+```
+**4.** Before running this project you need **.env** file. I don't share .env file, I'll guide you to setups skeleton of it.
+```text
+//first create .env file in base directory(in microservices dir)
+//after that copy below code then replace with your value
+
+EMAIL_ACC = use_your_email_address
+EMAIL_PASS = passkey
+DB_PASS = your_mysql_database_password
+DB_USER = your_mysql_db_user
+DB_HOST = localhost
+DB_PORT = 3307(change_port acc. to your mysql port)
+DB_NAME = ecomm(you may change it)
+USER_PORT = 8080
+PRODUCT_PORT = 8081
+CART_PORT = 8082
+ORDER_PORT = 8083
+PAYMENT_PORT = 8084
+PAYMENT_PUBLISHED_KEY = third_party_payment_integration_pub_key
+PAYMENT_SECRET_KEY = third_party_payment_integration_sec_key
+```
+If you don't want to setups email configuration, check where it is used and then remove it. So, you don't get any errors.
+Same for payment integration.
+
+**4.** As this project is based on microservice architecture and rest api.<br/>
+So, you need to run different services on multiple port(use don't need to mention any port everything is already setup).
+<br/>
+
+4.1. Let's run first microservices **Users**:
+```text
+//go to users/cmd
+cd users/cmd
+//run main.go file
+go run main.go
+```
+4.2. Same step-4.1 follows for other microservices. You just need to open new terminal and run below command.
+```text
+//let say you want to run product microservices
+cd product/cmd
+//run main.go file
+go run main.go
+```
+
+---
 ### Project Structure
 ```plaintext
 ├── cart/
 ├── payment/
 ├── products/
 │   ├── cmd/
-│   │   ├── uploads/
-│   │   │   └── main.go
+│   │   └── main.go
 │   ├── dbs/
 │   │   └── connection.go
 │   ├── internal/
@@ -23,7 +78,7 @@
 ├── users/
 ```
 
-### microservices in golang
+### Microservices in golang
 
 - Product Service: Manages the product catalog. It handles product information, such as name, description, price, availability, and categories.
 - Cart Service: Manages the user’s shopping cart. It handles adding/removing items, updating quantities, and calculating the total price.
