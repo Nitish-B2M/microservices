@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -179,7 +180,7 @@ func fetchUserDetails(c *gin.Context, userId int) (map[string]interface{}, error
 	}
 
 	token := utils.GetTokenFromRequestUsingGin(c)
-	req.Header.Add("Authorization", "Bearer "+token)
+	req.Header.Add("Authorization", token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request to user microservices. error: %w", err)
@@ -374,10 +375,10 @@ func proceedForPayment(c *gin.Context, order models.Order) (map[string]interface
 }
 
 func appendCartToInvoiceItem(invoice *invoices.InvoiceItem, cart, product map[string]interface{}, itemTotalPrice float64) {
-	invoice.Total = itemTotalPrice
-	invoice.Quantity = int(cart["quantity"].(float64))
-	invoice.Price = product["price"].(float64)
+	invoice.Total = strconv.FormatFloat(itemTotalPrice, 'f', -1, 64)
+	invoice.Quantity = strconv.FormatFloat(cart["quantity"].(float64), 'f', -1, 64)
+	invoice.Price = strconv.FormatFloat(product["price"].(float64), 'f', -1, 64)
 	invoice.Description = product["description"].(string)
 	invoice.Item = product["product_name"].(string)
-	invoice.DiscountedPrice = product["discount"].(float64)
+	invoice.DiscountedPrice = strconv.FormatFloat(product["discount"].(float64), 'f', -1, 64)
 }
