@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -42,22 +43,49 @@ func (db *Service) GetOrders(c *gin.Context) {
 }
 
 func (db *Service) CreateOrder(c *gin.Context) {
-	log.Println("CreateOrder")
+	if err := constants.ValidateUserWithCtxUserId(c); err != nil {
+		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+
+	c.JSON(200, gin.H{"status": "ok"})
 }
 
 func (db *Service) GetOrderById(c *gin.Context) {
-	log.Println("GetOrderById")
+	if err := constants.ValidateUserWithCtxUserId(c); err != nil {
+		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+
+	orderIdStr := c.Param("order_id")
+	if orderIdStr == "" {
+		utils.GinError(c, utils.OrderIdRequired, http.StatusBadRequest, nil)
+		return
+	}
+	orderId, err := strconv.Atoi(orderIdStr)
+	if err != nil {
+		utils.GinError(c, fmt.Sprintf(utils.OrderIdInvalid, orderIdStr), http.StatusBadRequest, nil)
+		return
+	}
+
+	var order models.Order
+	if err := order.GetOrderById(db.DB, orderId); err != nil {
+		utils.GinError(c, err.Error(), http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.GinResponse(order, c, fmt.Sprintf(utils.OrderFetchSuccess, orderId), http.StatusOK)
 }
 
 func (db *Service) Checkout(c *gin.Context) {
-	// need cart
-	// - cart id, price, product id also include product details
-	// need user details
-	// when go for checkout then it will first call create order then use order id to proceed for checkout
+	if err := constants.ValidateUserWithCtxUserId(c); err != nil {
+		utils.GinError(c, err.Error(), http.StatusBadRequest, err)
+		return
+	}
 
 	userId, err := constants.GetUserIdFromParams(c)
 	if err != nil {
-		utils.GinError(c, fmt.Sprintf(utils.UserNotFoundError, userId), http.StatusNotFound, err)
+		utils.GinError(c, fmt.Sprintf(utils.UserNotFoundError, userId), http.StatusBadRequest, err)
 		return
 	}
 
@@ -73,7 +101,7 @@ func (db *Service) Checkout(c *gin.Context) {
 
 	carts := body.Carts
 	var cartIds []int
-	totalPrice := 0.0
+	subTotalPrice, totalDiscount := 0.0, 0.0
 	var order models.Order
 
 	for _, cart := range carts {
@@ -85,7 +113,7 @@ func (db *Service) Checkout(c *gin.Context) {
 			return
 		}
 		if cart == nil {
-			utils.GinError(c, fmt.Sprintf(utils.CartItemNotFoundError, cartId), http.StatusNotFound, err)
+			utils.GinError(c, fmt.Sprintf(utils.CartItemNotFoundError, cartId), http.StatusBadRequest, err)
 			return
 		}
 		cartData := cart["data"].(map[string]interface{})
@@ -93,7 +121,7 @@ func (db *Service) Checkout(c *gin.Context) {
 		productId := int(cartData["product_id"].(float64))
 		product := fetchProductDetails(c, productId)
 		if product == nil {
-			utils.GinError(c, fmt.Sprintf(utils.ProductNotFoundError, productId), http.StatusNotFound, err)
+			utils.GinError(c, fmt.Sprintf(utils.ProductNotFoundError, productId), http.StatusBadRequest, err)
 			return
 		}
 		productData := product["data"].(map[string]interface{})
@@ -103,8 +131,9 @@ func (db *Service) Checkout(c *gin.Context) {
 		}
 
 		//calculating individual product price
-		eachTotalPrice := calculatePrice(productData["price"].(float64), productData["discount"].(float64), int(cartData["quantity"].(float64)))
-		totalPrice += eachTotalPrice
+		eachTotalPrice, eachDiscountAmt := calculatePrice(productData["price"].(float64), productData["discount"].(float64), int(cartData["quantity"].(float64)))
+		subTotalPrice += eachTotalPrice
+		totalDiscount += eachDiscountAmt
 
 		cartIds = append(cartIds, cartId)
 
@@ -115,7 +144,7 @@ func (db *Service) Checkout(c *gin.Context) {
 	}
 
 	//adding default tax(18%)
-	taxAmt, totalPrice := calculateTotalWithTax(totalPrice)
+	taxAmt, subTotalPrice := calculateTotalWithTax(subTotalPrice)
 
 	cartItemsJSON, err := json.Marshal(cartIds)
 	if err != nil {
@@ -128,7 +157,10 @@ func (db *Service) Checkout(c *gin.Context) {
 	order.UpdatedAt = time.Now()
 
 	order.CustomerID = userId
-	order.TotalAmount = totalPrice
+	order.TaxAmount = taxAmt
+	order.SubTotal = subTotalPrice
+	order.TotalAmount = subTotalPrice + taxAmt
+	order.DiscountAmount = totalDiscount
 	order.Carts = string(cartItemsJSON)
 	//create order
 	if err := order.CreateOrder(db.DB); err != nil {
@@ -162,8 +194,9 @@ func (db *Service) Checkout(c *gin.Context) {
 		return
 	}
 
-	//send data to invoice generator
-	GenerateOrderInvoice(order, userData, invoiceList, taxAmt, totalPrice)
+	//send data to invoice generator also this will send mail to user
+	GenerateOrderInvoice(order, userData, invoiceList)
+	go SendInvoice()
 
 	utils.GinResponse(order, c, utils.OrderSuccessful, http.StatusOK)
 }
@@ -279,16 +312,17 @@ func fetchProductDetails(c *gin.Context, productId int) map[string]interface{} {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		utils.GinErrorWithExtra(c, utils.ErrorProductMicroservices, http.StatusInternalServerError, err)
+		utils.GinErrorWithExtra(c, utils.ErrorProductMicroservices, http.StatusInternalServerError, err, "order.go")
 		return nil
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		utils.GinErrorWithExtra(c, "utils.ErrorReadingResponseBody", http.StatusInternalServerError, err)
+	var buf bytes.Buffer
+	if _, err = io.Copy(&buf, resp.Body); err != nil {
+		utils.GinErrorWithExtra(c, "utils.ErrorReadingResponseBody", http.StatusInternalServerError, err, "order.go")
 		return nil
 	}
+	body := buf.Bytes()
 
 	var product map[string]interface{}
 	if err := utils.ParseJSON(body, &product); err != nil {
@@ -318,18 +352,18 @@ func verifyQuantity(requestQuantity, actualQuantity int) bool {
 	return false
 }
 
-func calculatePrice(price, discount float64, quantity int) float64 {
+func calculatePrice(price, discount float64, quantity int) (float64, float64) {
 	p := price * float64(quantity)
 	discountAmt := p * (discount / 100)
 	total := p - discountAmt
-	return total
+	return total, discountAmt
 }
 
 func calculateTotalWithTax(totalAmt float64) (float64, float64) {
 	taxPct := 18
-	tax := float64(taxPct / 100)
+	tax := float64(taxPct) / float64(100)
 	taxAmt := totalAmt * tax
-	return taxAmt, totalAmt - taxAmt
+	return taxAmt, totalAmt
 }
 
 func proceedForPayment(c *gin.Context, order models.Order) (map[string]interface{}, error) {

@@ -320,9 +320,8 @@ func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.R
 
 	// Parse request body
 	var req struct {
-		ProductID int    `json:"product_id"`
-		Quantity  int    `json:"quantity"`
-		Method    string `json:"method"`
+		Quantity int    `json:"quantity"`
+		Method   string `json:"method"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.JsonError(w, "Invalid request body", http.StatusBadRequest, err)
@@ -331,31 +330,31 @@ func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.R
 
 	// Update product quantity in the database
 	if req.Method == "Add" {
-		err = AddQuantity(db.DB, productIDInt, req.Quantity)
+		productResp, err := AddQuantity(db.DB, productIDInt, req.Quantity)
 		if err != nil {
 			utils.JsonError(w, fmt.Sprintf("Failed to update quantity for product %s", productID), http.StatusInternalServerError, err)
 			return
 		}
+		utils.JsonResponse(productResp, w, utils.ProductQuantityUpdated, http.StatusOK)
 	} else if req.Method == "Subtract" {
-		err = SubtractQuantity(db.DB, productIDInt, req.Quantity)
+		productResp, err := SubtractQuantity(db.DB, productIDInt, req.Quantity)
 		if err != nil {
 			utils.JsonError(w, fmt.Sprintf("Failed to update quantity for product %s", productID), http.StatusInternalServerError, err)
 			return
 		}
+		utils.JsonResponse(productResp, w, utils.ProductQuantityUpdated, http.StatusOK)
 	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Product quantity updated successfully"))
+	utils.JsonError(w, "invalid method", http.StatusMethodNotAllowed, nil)
 }
 
-func SubtractQuantity(db *gorm.DB, productID int, quantity int) error {
+func SubtractQuantity(db *gorm.DB, productID int, quantity int) (*payloads.ProductResponse, error) {
 	product, err := models.FetchProductById(productID)
 	if err != nil {
-		return err
+		return product, err
 	}
 
 	if product.Quantity < quantity {
-		return fmt.Errorf("not enough stock for product %s", product.PName)
+		return product, fmt.Errorf(utils.ProductOutOfStockError, product.ID)
 	}
 
 	product.Quantity -= quantity
@@ -363,20 +362,16 @@ func SubtractQuantity(db *gorm.DB, productID int, quantity int) error {
 	// Save the updated product back to the database
 	err = models.UpdateProductQuantity(db, *product)
 	if err != nil {
-		return err
+		return product, err
 	}
 
-	return nil
+	return product, nil
 }
 
-func AddQuantity(db *gorm.DB, productID int, quantity int) error {
+func AddQuantity(db *gorm.DB, productID int, quantity int) (*payloads.ProductResponse, error) {
 	product, err := models.FetchProductById(productID)
 	if err != nil {
-		return err
-	}
-
-	if product.Quantity < quantity {
-		return fmt.Errorf("not enough stock for product %s", product.PName)
+		return product, err
 	}
 
 	product.Quantity += quantity
@@ -384,10 +379,10 @@ func AddQuantity(db *gorm.DB, productID int, quantity int) error {
 	// Save the updated product back to the database
 	err = models.UpdateProductQuantity(db, *product)
 	if err != nil {
-		return err
+		return product, err
 	}
 
-	return nil
+	return product, nil
 }
 
 func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request) {

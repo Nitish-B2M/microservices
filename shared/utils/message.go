@@ -40,6 +40,7 @@ const (
 	FailedToFetchProductDetails   = "failed to fetch product details"
 	InSufficientProductStockError = "insufficient stock for product %s"
 	ErrorProductMicroservices     = "error occurred while calling product microservice"
+	ProductQuantityUpdated        = "product quantity updated successfully"
 )
 
 // Info messages
@@ -187,7 +188,10 @@ const (
 
 // *************** Order *****************
 const (
-	OrderSuccessful = "order successfully created"
+	OrderSuccessful   = "order successfully created"
+	OrderFetchSuccess = "order with orderId %d fetch successfully"
+	OrderIdInvalid    = "order id %s is invalid"
+	OrderIdRequired   = "order id is required"
 )
 
 const (

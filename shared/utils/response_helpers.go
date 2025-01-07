@@ -114,8 +114,8 @@ func GinError(c *gin.Context, message string, status int, err error) {
 	})
 }
 
-func GinErrorWithExtra(c *gin.Context, message string, status int, err error) {
-	LogError(message, map[string]interface{}{"error": err})
+func GinErrorWithExtra(c *gin.Context, message string, status int, err error, filename string) {
+	LogErrorWithFilename(filename, message, map[string]interface{}{"error": err})
 	c.JSON(status, gin.H{
 		"message":     message,
 		"errorDetail": err.Error(),
