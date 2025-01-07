@@ -180,6 +180,18 @@ func isDomainValid(email string) bool {
 	return len(domain) > 3 && strings.Contains(domain, ".")
 }
 
+func ValidateUserIdWithCtxUserId(r *http.Request) (int, error) {
+	userID, ok := r.Context().Value(UserIDKey).(int)
+	if !ok {
+		return -1, errors.New(UserIdNotFoundInCtx)
+	}
+	paramsUserId, _ := GetIDFromPath(r)
+	if userID == paramsUserId {
+		return userID, nil
+	}
+	return 0, fmt.Errorf(InvalidUserIDError, userID)
+}
+
 func GetTokenFromRequestHeader(r *http.Request) string {
 	token := r.Header.Get("Authorization")
 	if token == "" {

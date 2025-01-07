@@ -55,11 +55,14 @@ const (
 
 // ************Tag*************
 const (
-	TagCreationFailed     = "failed to create tag: %v"
-	TagExistError         = "error checking tag existence: %v"
-	TagNotExist           = "tag does not exist, tag name: %v"
-	TagFetchError         = "error occurred while fetching tag"
-	TagAlreadyExistsError = "tag with name %v already exists"
+	TagCreationFailed        = "failed to create tag: %v"
+	TagExistError            = "error checking tag existence: %v"
+	TagNotExist              = "tag does not exist, tag name: %v"
+	TagFetchError            = "error occurred while fetching tag"
+	TagAlreadyExistsError    = "tag with name %v already exists"
+	TagUpdateFailed          = "failed to update tag: %v"
+	FailedAddingTagToProduct = "failed to add tag to product"
+	FailedToFetchTag         = "failed to fetch tag"
 )
 
 // Validation error messages
@@ -139,9 +142,11 @@ const (
 // ************* Middleware *************
 // Errors
 const (
-	MissingAuthorizationHeader = "Authorization header is missing"
+	MissingAuthorizationHeader = "authorization header is missing"
 	InvalidAuthorizationHeader = "invalid authorization header"
-	UserIdNotFoundInToken      = "User ID not found in token"
+	UserIdNotFoundInToken      = "user ID not found in token"
+	UserIdNotFoundInCtx        = "user ID not found in context"
+	UserIdNotFoundInParam      = "user ID not found in param"
 )
 
 // ************* Cart **************

@@ -48,4 +48,5 @@ func main() {
 
 func InitSchemas() {
 	models.InitUserSchema()
+	models.InitAddressSchemas()
 }

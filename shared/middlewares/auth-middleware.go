@@ -42,7 +42,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "userID", int(userID))
+		ctx := context.WithValue(r.Context(), utils.UserIDKey, int(userID))
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
@@ -86,7 +86,7 @@ func GinAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("userID", int(userID))
+		c.Set(utils.UserIDKey, int(userID))
 		c.Next()
 	}
 }

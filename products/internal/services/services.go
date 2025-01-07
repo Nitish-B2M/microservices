@@ -5,6 +5,7 @@ import (
 	"e-commerce-backend/products/pkg/payloads"
 	"e-commerce-backend/shared/utils"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	"io"
@@ -30,6 +31,9 @@ type FilterCriteria struct {
 	MaxQuantity int      `json:"max_quantity"`
 	Tags        []string `json:"tags"`
 }
+
+const ProductAddQuanMethod = "add"
+const ProductSubQuanMethod = "subtract"
 
 type Service struct {
 	DB *gorm.DB
@@ -94,13 +98,26 @@ func (db *Service) GetProductById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := models.FetchProductById(id)
+	var product models.Product
+	productResp, err := product.FetchProductResp(db.DB, id)
 	if err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
+		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, err)
 		return
 	}
 
-	utils.JsonResponse(product, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
+	tags, errs := models.FetchProductTagsName(db.DB, product.ID)
+	if len(errs) > 0 {
+		errStr := utils.ErrorsToString(errs)
+		utils.JsonError(w, utils.FailedToFetchTag, http.StatusNotFound, errors.New(errStr))
+	}
+
+	if tags == nil {
+		productResp.Tags = []string{}
+	} else {
+		productResp.Tags = tags
+	}
+
+	utils.JsonResponse(productResp, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
 }
 
 func (db *Service) AddProduct(w http.ResponseWriter, r *http.Request) {
@@ -120,13 +137,30 @@ func (db *Service) AddProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := models.AddProduct(newProduct)
+	var product models.Product
+	if err := models.CopyStructIntoStruct(&newProduct, &product); err != nil {
+		utils.JsonError(w, utils.InvalidProductDataError, http.StatusBadRequest, err)
+		return
+	}
+
+	id, err := product.AddProduct(db.DB)
 	if err != nil {
 		utils.JsonError(w, utils.ProductCreationError, http.StatusInternalServerError, err)
 		return
 	}
+	newProduct.ID = id
 
-	createdProduct, err := models.FetchProductById(id)
+	tagIds, tagErrors := models.CheckAndCreateProductTags(db.DB, newProduct.Tags, 0)
+	if len(tagErrors) > 0 {
+		utils.JsonError(w, utils.TagCreationFailed, http.StatusBadRequest, nil)
+	}
+
+	if errs := models.AddTagToProduct(db.DB, tagIds, id); len(errs) > 0 {
+		errStr := utils.ErrorsToString(errs)
+		utils.JsonError(w, utils.FailedAddingTagToProduct, http.StatusNotFound, errors.New(errStr))
+	}
+
+	createdProduct, err := product.FetchProductResp(db.DB, id)
 	if err != nil {
 		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, nil)
 		return
@@ -153,20 +187,19 @@ func (db *Service) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldProductDB, ok := models.CheckProductExistsById(id)
-	if !ok {
-		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, nil)
+	var existingP models.Product
+	if err := existingP.CheckProductExistsById(db.DB, id); err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
 
-	updatedFields := trackUpdatedProductFields(*oldProductDB, newProduct)
+	updatedFields := trackUpdatedProductFields(existingP, newProduct)
 	if len(updatedFields) == 0 {
-		utils.JsonResponse(*oldProductDB, w, fmt.Sprintf(utils.UserNotModified, id), http.StatusNotModified)
+		utils.JsonResponse(existingP, w, fmt.Sprintf(utils.UserNotModified, id), http.StatusNotModified)
 		return
 	}
 
-	err = models.UpdateProduct(id, newProduct, updatedFields)
-	if err != nil {
+	if err := existingP.UpdateProduct(db.DB, id, updatedFields); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusInternalServerError, err)
 			return
@@ -175,13 +208,25 @@ func (db *Service) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedProduct, err := models.FetchProductById(id)
+	tagIds, tagErrors := models.CheckAndCreateProductTags(db.DB, newProduct.Tags, id)
+	if len(tagErrors) > 0 {
+		utils.JsonError(w, utils.TagCreationFailed, http.StatusBadRequest, nil)
+		return
+	}
+
+	if errs := models.UpdateTagToProduct(db.DB, tagIds, id); len(errs) > 0 {
+		errStr := utils.ErrorsToString(errs)
+		utils.JsonError(w, fmt.Sprintf(utils.ProductTagUpdateError, id), http.StatusBadRequest, errors.New(errStr))
+		return
+	}
+
+	productResp, err := existingP.FetchProductResp(db.DB, id)
 	if err != nil {
 		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, nil)
 		return
 	}
 
-	utils.JsonResponse(updatedProduct, w, fmt.Sprintf(utils.ProductUpdatedSuccessfully, updatedProduct.ID), http.StatusOK)
+	utils.JsonResponse(productResp, w, fmt.Sprintf(utils.ProductUpdatedSuccessfully, id), http.StatusOK)
 }
 
 func (db *Service) DeleteProduct(w http.ResponseWriter, r *http.Request) {
@@ -195,23 +240,18 @@ func (db *Service) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = models.DeleteProduct(id)
+	var product models.Product
+	err = product.DeleteProduct(db.DB, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusInternalServerError, err)
+			utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusBadRequest, err)
 			return
 		}
 		utils.JsonError(w, fmt.Sprintf(utils.ProductDeletionError, id), http.StatusInternalServerError, err)
 		return
 	}
 
-	deletedProduct, err := models.FetchProductById(id)
-	if err != nil {
-		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, nil)
-		return
-	}
-
-	utils.JsonResponse(deletedProduct, w, fmt.Sprintf(utils.ProductDeletedSuccessfully, deletedProduct.ID), http.StatusOK)
+	utils.JsonResponse(nil, w, fmt.Sprintf(utils.ProductDeletedSuccessfully, id), http.StatusOK)
 }
 
 func (db *Service) FilterProducts(w http.ResponseWriter, r *http.Request) {
@@ -305,10 +345,9 @@ func splitPath(path string) []string {
 }
 
 func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.Request) {
-	// Parse product ID from URL
-	productID := mux.Vars(r)["id"] // Use your router logic to extract the `id`
+	productID := mux.Vars(r)["id"]
 	if productID == "" {
-		utils.JsonError(w, "Product ID is required", http.StatusBadRequest, nil)
+		utils.JsonError(w, utils.ProductIDRequiredError, http.StatusBadRequest, nil)
 		return
 	}
 
@@ -329,60 +368,68 @@ func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.R
 	}
 
 	// Update product quantity in the database
-	if req.Method == "Add" {
-		productResp, err := AddQuantity(db.DB, productIDInt, req.Quantity)
-		if err != nil {
-			utils.JsonError(w, fmt.Sprintf("Failed to update quantity for product %s", productID), http.StatusInternalServerError, err)
-			return
-		}
-		utils.JsonResponse(productResp, w, utils.ProductQuantityUpdated, http.StatusOK)
-	} else if req.Method == "Subtract" {
-		productResp, err := SubtractQuantity(db.DB, productIDInt, req.Quantity)
-		if err != nil {
-			utils.JsonError(w, fmt.Sprintf("Failed to update quantity for product %s", productID), http.StatusInternalServerError, err)
-			return
-		}
-		utils.JsonResponse(productResp, w, utils.ProductQuantityUpdated, http.StatusOK)
+	var productResp payloads.ProductResponse
+	if req.Method == ProductAddQuanMethod {
+		productResp, err = AddQuantity(db.DB, productIDInt, req.Quantity)
+	} else if req.Method == ProductSubQuanMethod {
+		productResp, err = SubtractQuantity(db.DB, productIDInt, req.Quantity)
+	} else {
+		utils.JsonError(w, "Invalid method", http.StatusBadRequest, nil)
+		return
 	}
-	utils.JsonError(w, "invalid method", http.StatusMethodNotAllowed, nil)
+
+	if err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.ProductUnexpectedUpdateError), http.StatusInternalServerError, err)
+		return
+	}
+	utils.JsonResponse(productResp, w, utils.ProductQuantityUpdated, http.StatusOK)
 }
 
-func SubtractQuantity(db *gorm.DB, productID int, quantity int) (*payloads.ProductResponse, error) {
-	product, err := models.FetchProductById(productID)
-	if err != nil {
-		return product, err
+func SubtractQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResponse, error) {
+	var product models.Product
+	var productResp payloads.ProductResponse
+
+	if err := product.CheckProductExistsById(db, productID); err != nil {
+		return productResp, err
 	}
 
 	if product.Quantity < quantity {
-		return product, fmt.Errorf(utils.ProductOutOfStockError, product.ID)
+		return productResp, fmt.Errorf(utils.ProductOutOfStockError, product.ID)
 	}
 
 	product.Quantity -= quantity
-
 	// Save the updated product back to the database
-	err = models.UpdateProductQuantity(db, *product)
-	if err != nil {
-		return product, err
+	if err := product.UpdateProductQuantity(db); err != nil {
+		return productResp, err
 	}
 
-	return product, nil
+	if err := models.CopyStructIntoStruct(&product, &productResp); err != nil {
+		return productResp, err
+	}
+
+	return productResp, nil
 }
 
-func AddQuantity(db *gorm.DB, productID int, quantity int) (*payloads.ProductResponse, error) {
-	product, err := models.FetchProductById(productID)
-	if err != nil {
-		return product, err
+func AddQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResponse, error) {
+	var product models.Product
+	var productResp payloads.ProductResponse
+
+	if err := product.CheckProductExistsById(db, productID); err != nil {
+		return productResp, err
 	}
 
 	product.Quantity += quantity
 
 	// Save the updated product back to the database
-	err = models.UpdateProductQuantity(db, *product)
-	if err != nil {
-		return product, err
+	if err := product.UpdateProductQuantity(db); err != nil {
+		return productResp, err
 	}
 
-	return product, nil
+	if err := models.CopyStructIntoStruct(&product, &productResp); err != nil {
+		return productResp, err
+	}
+
+	return productResp, nil
 }
 
 func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request) {
@@ -392,19 +439,20 @@ func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	product, err := models.FetchProductById(id)
+	var product models.Product
+	productResp, err := product.FetchProductResp(db.DB, id)
 	if err != nil {
 		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
 
 	response := map[string]interface{}{
-		"id":           product.ID,
-		"product_name": product.PName,
-		"description":  product.PDesc,
-		"price":        product.Price,
-		"quantity":     product.Quantity,
-		"discount":     product.Discount,
+		"id":           productResp.ID,
+		"product_name": productResp.PName,
+		"description":  productResp.PDesc,
+		"price":        productResp.Price,
+		"quantity":     productResp.Quantity,
+		"discount":     productResp.Discount,
 	}
 
 	utils.JsonResponse(response, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
