@@ -8,6 +8,8 @@ import (
 	"reflect"
 )
 
+const UserIDKey string = "userID"
+
 func MapStructFields(src interface{}, dest interface{}) error {
 	srcValue := reflect.ValueOf(src)
 	destValue := reflect.ValueOf(dest)
@@ -74,4 +76,16 @@ func GetUserMicroserviceLink(extra string) string {
 		userBaseUrl = userBaseUrl + extra
 	}
 	return userBaseUrl
+}
+
+func ErrorsToString(errs []error) string {
+	errStr := ""
+	for i, err := range errs {
+		if i != len(errs)-1 {
+			errStr += err.Error()
+		} else {
+			errStr += err.Error() + ", "
+		}
+	}
+	return errStr
 }

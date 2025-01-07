@@ -41,13 +41,8 @@ func InitProductSchema() {
 	}
 }
 
-func CheckProductExistsById(id int) (*Product, bool) {
-	var product Product
-	db := dbs.DB
-	if err := db.Where("id = ? AND is_deleted = ?", id, false).First(&product, id).Error; err != nil {
-		return nil, false
-	}
-	return &product, true
+func (p *Product) CheckProductExistsById(db *gorm.DB, id int) error {
+	return db.Where("id = ? AND is_deleted = ?", id, false).First(&p).Error
 }
 
 func GetProducts() ([]payloads.ProductResponse, []error) {
@@ -91,106 +86,42 @@ func GetProducts() ([]payloads.ProductResponse, []error) {
 	return resProducts, nil
 }
 
-func FetchProductById(id int) (*payloads.ProductResponse, error) {
-	db := dbs.DB
-	var resProduct payloads.ProductResponse
-
-	product, ok := CheckProductExistsById(id)
-	if !ok {
-		utils.SimpleLog("error", fmt.Sprintf(utils.ProductNotFoundError, id))
-		return nil, fmt.Errorf(utils.ProductNotFoundError, id)
-	}
-
-	if err := CopyStructIntoStruct(product, &resProduct); err != nil {
-		utils.SimpleLog("error", err.Error())
+func (p *Product) FetchProductResp(db *gorm.DB, id int) (*payloads.ProductResponse, error) {
+	var productResp payloads.ProductResponse
+	if err := p.CheckProductExistsById(db, id); err != nil {
 		return nil, err
 	}
 
-	tags, err := FetchProductTagsName(db, product.ID)
-	if err != nil {
-		utils.SimpleLog("error", "error while fetching tags", err)
+	if err := CopyStructIntoStruct(p, &productResp); err != nil {
+		return nil, err
 	}
-
-	if tags == nil {
-		resProduct.Tags = []string{}
-	} else {
-		resProduct.Tags = tags
-	}
-
-	utils.SimpleLog("info", fmt.Sprintf(utils.ProductFetchedSuccessfully, id), id)
-	return &resProduct, nil
+	return &productResp, nil
 }
 
-func AddProduct(newProduct payloads.ProductRequest) (int, error) {
-	var productDB Product
-	db := dbs.DB
-	newProduct.ID = utils.GenerateRandomID()
-
-	tagIds, tagErrors := CheckAndCreateProductTags(db, newProduct.Tags, 0)
-	if len(tagErrors) > 0 {
-		utils.SimpleLog("error", "creating tag error", tagErrors)
-		return 0, nil
-	}
-
-	if err := CopyStructIntoStruct(&newProduct, &productDB); err != nil {
-		utils.SimpleLog("error", err.Error())
+func (p *Product) AddProduct(db *gorm.DB) (int, error) {
+	p.ID = utils.GenerateRandomID()
+	if err := db.Create(&p).Error; err != nil {
 		return 0, err
 	}
-
-	errs := AddTagToProduct(db, tagIds, newProduct.ID)
-	if len(errs) > 0 {
-		for _, err := range errs {
-			utils.SimpleLog("error", err.Error())
-		}
-	}
-
-	if err := db.Create(&productDB).Error; err != nil {
-		utils.SimpleLog("error", "creating product error", err)
-		return 0, err
-	}
-
-	utils.SimpleLog("info", fmt.Sprintf(utils.ProductCreatedSuccessfully, newProduct.ID), newProduct.ID)
-	return newProduct.ID, nil
+	return p.ID, nil
 }
 
-func UpdateProduct(id int, newProduct payloads.ProductRequest, updatedFields map[string]interface{}) error {
-	db := dbs.DB
-
-	tagIds, tagErrors := CheckAndCreateProductTags(db, newProduct.Tags, id)
-	if len(tagErrors) > 0 {
-		utils.SimpleLog("error", "creating tag error", tagErrors)
-		return nil
-	}
-
-	errs := UpdateTagToProduct(db, tagIds, id)
-	if len(errs) > 0 {
-		utils.SimpleLog("error", "while updating product tag", errs)
-		return fmt.Errorf(utils.ProductTagUpdateError, id)
-	}
-
-	var productDB Product
-	if err := db.Model(&productDB).Where("id = ?", id).Updates(updatedFields).Error; err != nil {
+func (p *Product) UpdateProduct(db *gorm.DB, id int, updatedFields map[string]interface{}) error {
+	if err := db.Model(&p).Where("id = ?", id).Updates(updatedFields).Error; err != nil {
 		return err
 	}
-
 	return nil
 }
 
-func DeleteProduct(id int) error {
-	db := dbs.DB
-
-	_, ok := CheckProductExistsById(id)
-	if !ok {
-		utils.SimpleLog("error", fmt.Sprintf(utils.ProductNotFoundError, id))
+func (p *Product) DeleteProduct(db *gorm.DB, id int) error {
+	if err := p.CheckProductExistsById(db, id); err != nil {
 		return fmt.Errorf(utils.ProductNotFoundError, id)
 	}
 
 	if err := db.Model(&Product{}).Where("id = ? and is_deleted = ?", id, false).Update("is_deleted", true).Error; err != nil {
-		utils.SimpleLog("error", fmt.Sprintf(utils.InternalServerError), err)
 		return fmt.Errorf(utils.InternalServerError)
 	}
 
-	utils.SimpleLog("info", fmt.Sprintf(utils.ProductDeletedSuccessfully, id))
 	return nil
 }
 
@@ -259,8 +190,8 @@ func FetchProductTagsName(db *gorm.DB, productID int) ([]string, []error) {
 	return tagWithName, nil
 }
 
-func UpdateProductQuantity(db *gorm.DB, product payloads.ProductResponse) error {
-	if err := db.Model(&Product{}).Where("id =?", product.ID).Update("quantity", product.Quantity).Error; err != nil {
+func (p *Product) UpdateProductQuantity(db *gorm.DB) error {
+	if err := db.Model(&p).Where("id =?", p.ID).Update("quantity", p.Quantity).Error; err != nil {
 		return err
 	}
 	return nil
