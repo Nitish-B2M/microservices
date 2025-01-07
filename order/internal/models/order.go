@@ -16,7 +16,9 @@ type Order struct {
 	Carts          string    `gorm:"type:json" json:"carts"`
 	OrderStatus    int       `json:"order_status" gorm:"default:0"`
 	DiscountCode   string    `gorm:"default:null" json:"discount_code"`
+	DiscountAmount float64   `gorm:"default:null" json:"discount_amount"`
 	TaxAmount      float64   `json:"tax_amount"`
+	SubTotal       float64   `json:"sub_total"`
 	ShippingMethod string    `json:"shipping_method"`
 	CreatedAt      time.Time `json:"-" gorm:"type:datetime;default:CURRENT_TIMESTAMP"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"type:datetime;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`

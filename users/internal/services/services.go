@@ -1,6 +1,8 @@
 package services
 
 import (
+	"e-commerce-backend/shared/notifications/emails"
+	"e-commerce-backend/shared/notifications/emails/templates"
 	"e-commerce-backend/shared/utils"
 	"e-commerce-backend/users/internal/models"
 	"e-commerce-backend/users/pkg/constants"
@@ -8,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"reflect"
 	"strings"
@@ -202,17 +203,9 @@ func (db *Service) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//email send
-	var userCreationTemplate utils.UserCreation
-
-	userCreationTemplate.Email = userRequest.Email
-	userCreationTemplate.Role = "User"
-	template, err := utils.GenerateUserCreationMessage(userCreationTemplate)
-	if err != nil {
-		log.Fatal("Error generating user creation message:", err)
-	}
-	_ = template
-	//utils.SendEmail(userRequest.Email, "User Created Successfully", template)
+	//send registration success mail (go routine)
+	emailContent := emails.UserCreation{Email: userResponse.Email, Role: "user"} //need to change role as role functionality added
+	emails.EmailWorkerWithGoRoutine(userResponse.Email, templates.UserRegistrationSuccessFul, templates.USER_CREATED_TEMPLATE, emailContent, []string{})
 
 	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserCreatedSuccessfully, 1), http.StatusOK)
 }

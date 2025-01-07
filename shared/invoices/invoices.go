@@ -1,6 +1,8 @@
 package invoices
 
 import (
+	"e-commerce-backend/shared/notifications/emails"
+	"e-commerce-backend/shared/notifications/emails/templates"
 	"fmt"
 	"github.com/johnfercher/maroto/v2"
 	"github.com/johnfercher/maroto/v2/pkg/components/col"
@@ -23,7 +25,13 @@ import (
 	"time"
 )
 
-func InvoiceGenerator(invoice Invoice) {
+func InvoiceGeneratorWithSendMail(invoice Invoice) {
+	filePath, _ := InvoiceGenerator(invoice)
+	body := emails.OrderInvoiceAttachment{OrderID: invoice.InvoiceId, InvoiceID: invoice.InvoiceId, CustomerName: invoice.UserDetails.Name}
+	emails.EmailWorkerWithGoRoutine(invoice.UserDetails.Email, fmt.Sprintf(templates.OrderInvoiceAttachedSubject, invoice.InvoiceId), templates.ORDER_INVOICE_TEMPLATE, body, []string{filePath})
+}
+
+func InvoiceGenerator(invoice Invoice) (string, error) {
 	cfg := config.NewBuilder().
 		WithOrientation(orientation.Vertical).
 		WithPageSize(pagesize.A4).
@@ -48,14 +56,17 @@ func InvoiceGenerator(invoice Invoice) {
 	document, err := m.Generate()
 	if err != nil {
 		log.Fatal(err.Error())
+		return "", err
 	}
 
-	outFilePath := fmt.Sprintf("D:/data/golang/microservices/e-commerce-nyoffical/shared/invoices/uploads/%d_invoice.pdf", 1)
+	outFilePath := fmt.Sprintf("D:/data/golang/microservices/e-commerce-nyoffical/shared/invoices/uploads/%s_invoice_%v.pdf", invoice.InvoiceId, time.Now().Unix())
 	err = document.Save(outFilePath)
 	if err != nil {
 		log.Fatal(err.Error())
+		return "", err
 	}
-	log.Println("PDF saved successfully.")
+	log.Println("PDF saved successfully. Filepath is", outFilePath)
+	return outFilePath, nil
 }
 
 func addHeader(m core.Maroto, inv Invoice) {
@@ -139,6 +150,8 @@ type Invoice struct {
 	InvoiceItemList []InvoiceItem  `json:"invoice_item_list"`
 	CompanyDetails  CompanyDetails `json:"company_details"`
 	TaxAmount       string         `json:"tax_amount"`
+	SubTotal        string         `json:"sub_total"`
+	TotalDiscount   string         `json:"total_discount"`
 	TotalAmount     string         `json:"total_amount"`
 }
 
@@ -192,10 +205,10 @@ func (o InvoiceItem) GetHeader() core.Row {
 			BorderType:      border.Full, // Add left and right borders
 			BorderThickness: 0.6,         // Border thickness
 		}),
-		text.NewCol(2, "Quantity", rowHeaderProperties()),
+		text.NewCol(1, "Qty.", rowHeaderProperties()),
 		text.NewCol(1, "Price", rowHeaderProperties()),
 		text.NewCol(2, "Discount", rowHeaderProperties()),
-		text.NewCol(2, "Total", rowHeaderProperties()),
+		text.NewCol(2, "Sub Tot.", rowHeaderProperties()),
 	)
 
 	cRow.WithStyle(&props.Cell{
@@ -215,9 +228,13 @@ func wrapText(text string, lineWidth int) []string {
 	words := splitTextIntoWords(text)
 	var currentLine string
 
-	for _, word := range words {
+	for i, word := range words {
 		if len(currentLine)+len(word)+1 <= lineWidth {
-			currentLine += " " + word
+			if i == 0 {
+				currentLine = word
+			} else {
+				currentLine += " " + word
+			}
 		} else {
 			lines = append(lines, currentLine)
 			currentLine = word
@@ -232,8 +249,7 @@ func wrapText(text string, lineWidth int) []string {
 }
 
 func (o InvoiceItem) GetContent(i int) core.Row {
-
-	descriptionLines := wrapText(o.Description, 50) // Wrap text to fit within the desired width (adjust accordingly)
+	descriptionLines := wrapText(o.Description, 20) // Wrap text to fit within the desired width (adjust accordingly)
 
 	// Dynamically calculate row height based on the number of lines in the description
 	rowHeight := float64(9 + len(descriptionLines) + 1)
@@ -246,15 +262,16 @@ func (o InvoiceItem) GetContent(i int) core.Row {
 	for _, line := range descriptionLines {
 		descriptionText += line + "\n" // Add a newline after each line
 	}
+	descriptionText = strings.TrimSpace(descriptionText)
 
 	// Add the description text as a single column
 	r.Add(text.NewCol(5, descriptionText, rowProperties()))
 
 	r.Add(
-		text.NewCol(2, o.Quantity, rowProperties()),
-		text.NewCol(1, "sssss", rowProperties()),
-		text.NewCol(2, o.DiscountedPrice, rowProperties()),
-		text.NewCol(2, o.Total, rowProperties()),
+		text.NewCol(1, o.Quantity, rowProperties()),
+		text.NewCol(1, strToFloatToStr(o.Price), rowProperties()),
+		text.NewCol(2, o.DiscountedPrice+"%", rowProperties()),
+		text.NewCol(2, strToFloatToStr(o.Total), rowProperties()),
 	)
 
 	if i%2 == 0 {
@@ -270,23 +287,6 @@ func (o InvoiceItem) GetContent(i int) core.Row {
 	return r
 }
 
-// not in use
-func getObjects() []InvoiceItem {
-	var items []InvoiceItem
-	contents := [][]string{
-		{"Laptop", "14-inch, 16GB RAM", "1", "$1200", "$1000", "$200"},
-		{"Mouse", "Wireless optical mouse optical mouse optical mouse", "2", "$25", "$20", "$30"},
-		{"Keyboard", "Mechanical, RGB", "1", "$75", "$60", "$15"},
-	}
-	for i := 0; i < len(contents); i++ {
-		items = append(items, InvoiceItem{
-			Item:        contents[i][0],
-			Description: contents[i][1],
-		})
-	}
-	return items
-}
-
 // Adds a list of items to the invoice
 func addItemList(m core.Maroto, items []InvoiceItem) {
 	rows, err := list.Build[InvoiceItem](items)
@@ -296,11 +296,21 @@ func addItemList(m core.Maroto, items []InvoiceItem) {
 	m.AddRows(rows...)
 }
 
+func strToFloatToStr(s string) string {
+	v, _ := strconv.ParseFloat(s, 64)
+	return fmt.Sprintf("%.2f", v)
+}
+
 // Adds a footer with total and signature
 func (inv Invoice) addFooter(m core.Maroto) {
+	taxAmtStr := strToFloatToStr(inv.TaxAmount)
+	subTotalAmtStr := strToFloatToStr(inv.SubTotal)
+	totalAmtStr := strToFloatToStr(inv.TotalAmount)
+	discountAmtStr := strToFloatToStr(inv.TotalDiscount)
+
 	m.AddRow(8,
 		text.NewCol(8, ""),
-		text.NewCol(2, "Tax Amount  ", props.Text{
+		text.NewCol(2, "Discount ", props.Text{
 			Top:   2,
 			Style: fontstyle.Bold,
 			Size:  10,
@@ -308,7 +318,47 @@ func (inv Invoice) addFooter(m core.Maroto) {
 		}, rowHeaderProperties()).WithStyle(&props.Cell{
 			BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
 		}),
-		text.NewCol(2, inv.TaxAmount, props.Text{
+		text.NewCol(2, discountAmtStr, props.Text{
+			Top:   2,
+			Style: fontstyle.Bold,
+			Size:  10,
+			Align: align.Center,
+		}, rowProperties()).WithStyle(&props.Cell{
+			BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
+		}),
+	)
+
+	m.AddRow(8,
+		text.NewCol(8, ""),
+		text.NewCol(2, "Tax(18%) ", props.Text{
+			Top:   2,
+			Style: fontstyle.Bold,
+			Size:  10,
+			Align: align.Right,
+		}, rowHeaderProperties()).WithStyle(&props.Cell{
+			BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
+		}),
+		text.NewCol(2, taxAmtStr, props.Text{
+			Top:   2,
+			Style: fontstyle.Bold,
+			Size:  10,
+			Align: align.Center,
+		}, rowProperties()).WithStyle(&props.Cell{
+			BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
+		}),
+	)
+
+	m.AddRow(8,
+		text.NewCol(8, ""),
+		text.NewCol(2, "Sub Total ", props.Text{
+			Top:   2,
+			Style: fontstyle.Bold,
+			Size:  10,
+			Align: align.Right,
+		}, rowHeaderProperties()).WithStyle(&props.Cell{
+			BackgroundColor: &props.Color{Red: 240, Green: 240, Blue: 240},
+		}),
+		text.NewCol(2, subTotalAmtStr, props.Text{
 			Top:   2,
 			Style: fontstyle.Bold,
 			Size:  10,
@@ -329,7 +379,7 @@ func (inv Invoice) addFooter(m core.Maroto) {
 		}, rowHeaderProperties()).WithStyle(&props.Cell{
 			BackgroundColor: getDarkGrayColor(),
 		}),
-		text.NewCol(2, inv.TotalAmount, props.Text{
+		text.NewCol(2, totalAmtStr, props.Text{
 			Top:   2,
 			Style: fontstyle.Bold,
 			Size:  10,

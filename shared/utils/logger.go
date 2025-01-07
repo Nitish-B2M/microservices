@@ -13,6 +13,10 @@ func LogError(message string, context map[string]interface{}) {
 	log.Printf("[ERROR] %s | Context: %+v", message, context)
 }
 
+func LogErrorWithFilename(filename, message string, context map[string]interface{}) {
+	log.Printf("[Filename] %s | [ERROR] %s | Context: %+v", filename, message, context)
+}
+
 func SimpleLog(level, message string, context ...interface{}) {
 	var logMessage string
 	if len(context) > 0 {
