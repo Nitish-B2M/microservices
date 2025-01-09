@@ -19,3 +19,8 @@ type CartRemoveItem struct {
 	ProductID int `json:"product_id"`
 	Quantity  int `json:"quantity"`
 }
+
+type CartQtyUpdateRequest struct {
+	Quantity int    `json:"quantity"`
+	Method   string `json:"method"`
+}

@@ -17,6 +17,13 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	CartQuantityAddMethod string = "add"
+	CartQuantitySubMethod string = "subtract"
+)
+
+var cartMutex sync.Mutex
+
 type Service struct {
 	DB *gorm.DB
 	mu sync.Mutex
@@ -89,11 +96,12 @@ func fetchProductUsingMicroservices(productId int) (map[string]interface{}, erro
 }
 
 func (db *Service) GetCartItemByUserID(w http.ResponseWriter, r *http.Request) {
-	userId, ok := verifyUserUsingIdAndCtxId(r)
-	if !ok {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
-		return
-	}
+	//userId, ok := verifyUserUsingIdAndCtxId(r)
+	//if !ok {
+	//	utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
+	//	return
+	//}
+	userId := utils.GetUserIdFromContext(r)
 
 	var cart models.Cart
 	cartItems, err := cart.GetCartByUserId(db.DB, userId)
@@ -126,18 +134,12 @@ func (db *Service) GetCartItemByUserID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("Authorization")
+	token := utils.GetTokenFromRequestHeader(r)
 	if token == "" {
 		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, nil)
 		return
 	}
-	token = strings.TrimPrefix(token, "Bearer ")
-
-	userId, ok := verifyUserUsingIdAndCtxId(r)
-	if !ok {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
-		return
-	}
+	userId := utils.GetUserIdFromContext(r)
 
 	var req payloads.CartRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -145,6 +147,9 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 		utils.JsonError(w, utils.InvalidProductRequest, http.StatusBadRequest, err)
 		return
 	}
+	//avoiding race condition
+	cartMutex.Lock()
+	defer cartMutex.Unlock()
 
 	//response
 	var cartResp payloads.CartResponse
@@ -169,13 +174,13 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 		log.Printf(constants.AddingProductToCart, item.ProductID, item.Quantity)
 
 		//insert into cart table logic int 4
-		cartData := models.Cart{
+		newCart := models.Cart{
 			UserId:    userId,
 			ProductId: item.ProductID,
 			Quantity:  item.Quantity,
 		}
 
-		cart, err := cartData.AddToCart(db.DB)
+		cart, err := newCart.AddToCart(db.DB)
 		if err != nil {
 			utils.JsonError(w, utils.CartItemAdditionError, http.StatusInternalServerError, err)
 			return
@@ -207,6 +212,46 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(cartResp, w, constants.ItemsAddedToCart, http.StatusCreated)
 }
 
+func (db *Service) UpdateCartQty(w http.ResponseWriter, r *http.Request) {
+	//avoiding race condition
+	cartMutex.Lock()
+	defer cartMutex.Unlock()
+
+	cartId, err := utils.GetIDFromPath(r)
+	if err != nil {
+		utils.JsonError(w, utils.InvalidCartRequest, http.StatusBadRequest, err)
+		return
+	}
+
+	var req payloads.CartQtyUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.JsonError(w, utils.InvalidCartRequest, http.StatusBadRequest, err)
+		return
+	}
+
+	var existingCart models.Cart
+	if err := existingCart.GetCartByCartId(db.DB, cartId); err != nil {
+		utils.JsonError(w, fmt.Sprintf(utils.CartItemNotFoundError, cartId), http.StatusNotFound, err)
+		return
+	}
+
+	if req.Method == CartQuantityAddMethod {
+		existingCart.Quantity += req.Quantity
+	} else if req.Method == CartQuantitySubMethod {
+		existingCart.Quantity -= req.Quantity
+	} else {
+		utils.JsonError(w, utils.InvalidCartRequest, http.StatusBadRequest, fmt.Errorf(utils.InvalidCartRequest))
+		return
+	}
+
+	if err := existingCart.UpdateCart(db.DB); err != nil {
+		utils.JsonError(w, utils.CartItemUpdateError, http.StatusInternalServerError, err)
+		return
+	}
+	
+	utils.JsonResponseWithExtra(existingCart, w, fmt.Sprintf(utils.CartItemUpdatedSuccessfully, cartId), http.StatusOK, "UpdateCartQty")
+}
+
 func (db *Service) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get("Authorization")
 	if token == "" {
@@ -214,12 +259,6 @@ func (db *Service) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token = strings.TrimPrefix(token, "Bearer ")
-
-	userId, ok := verifyUserUsingIdAndCtxId(r)
-	if !ok {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
-		return
-	}
 
 	var req payloads.CartRemoveRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -234,18 +273,18 @@ func (db *Service) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 	for _, item := range req.Items {
 		var cart models.Cart
 		if err := cart.GetCartByCartId(db.DB, item.Id); err != nil {
-			utils.JsonErrorWithExtra(w, utils.CartItemDeletionError, http.StatusInternalServerError, err)
+			utils.JsonErrorWithExtra(w, utils.CartItemDeletionError, http.StatusInternalServerError, err, map[string]interface{}{"function": "RemoveFromCart"})
 			return
 		}
 
-		product, err := fetchProductUsingMicroservices(item.ProductID)
+		product, err := fetchProductUsingMicroservices(cart.ProductId)
 		if err != nil {
 			return
 		}
 
 		//insert into cart table logic
 		if err := cart.RemoveItemFromCart(db.DB, item.Id, item.Quantity); err != nil {
-			utils.JsonErrorWithExtra(w, utils.CartItemDeletionError, http.StatusInternalServerError, err)
+			utils.JsonErrorWithExtra(w, utils.CartItemDeletionError, http.StatusInternalServerError, err, map[string]interface{}{"function": "RemoveFromCart"})
 			return
 		}
 
@@ -271,11 +310,12 @@ func (db *Service) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token = strings.TrimPrefix(token, "Bearer ")
-	userId, ok := verifyUserUsingIdAndCtxId(r)
-	if !ok {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
-		return
-	}
+	//userId, ok := verifyUserUsingIdAndCtxId(r)
+	//if !ok {
+	//	utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
+	//	return
+	//}
+	userId := utils.GetUserIdFromContext(r)
 
 	var cart models.Cart
 	carts, err := cart.GetCartByUserId(db.DB, userId)
@@ -347,11 +387,12 @@ func (db *Service) GetCartByCartId(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token = strings.TrimPrefix(token, "Bearer ")
-	userId, ok := verifyUserUsingIdAndCtxId(r)
-	if !ok {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
-		return
-	}
+	//userId, ok := verifyUserUsingIdAndCtxId(r)
+	//if !ok {
+	//	utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
+	//	return
+	//}
+	userId := utils.GetUserIdFromContext(r)
 
 	cartId, ok := getCartIdFromParams(r)
 	if !ok {
