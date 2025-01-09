@@ -29,7 +29,7 @@ func NewUser(db *gorm.DB) *Service {
 
 type UserInterface interface {
 	GetAllUsers(w http.ResponseWriter, r *http.Request)
-	GetUserById(w http.ResponseWriter, r *http.Request)
+	GetUserProfile(w http.ResponseWriter, r *http.Request)
 	CreateUser(w http.ResponseWriter, r *http.Request)
 	UpdateUser(w http.ResponseWriter, r *http.Request)
 	DeleteUser(w http.ResponseWriter, r *http.Request)
@@ -127,16 +127,12 @@ func (db *Service) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(output, w, utils.UsersFetchedSuccessfully, http.StatusOK)
 }
 
-func (db *Service) GetUserById(w http.ResponseWriter, r *http.Request) {
+func (db *Service) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	if ok := utils.CheckRequestMethod(w, r, http.MethodGet); !ok {
 		return
 	}
 
-	id, err := utils.GetIDFromPath(r)
-	if err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
-		return
-	}
+	id := utils.GetUserIdFromContext(r)
 
 	var userService models.User
 	userResponse, err := userService.GetUserById(db.DB, id)
@@ -211,16 +207,7 @@ func (db *Service) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
-	if ok := utils.CheckRequestMethod(w, r, http.MethodPut); !ok {
-		return
-	}
-
-	id, err := utils.GetIDFromPath(r)
-	if err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.InvalidUserIDError, id), http.StatusBadRequest, err)
-		return
-	}
-
+	userId := utils.GetUserIdFromContext(r)
 	var newUserData payloads.UserUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&newUserData); err != nil {
 		utils.JsonError(w, utils.InvalidUserDataError, http.StatusBadRequest, err)
@@ -228,23 +215,23 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var oldUserData models.User
-	_, err = oldUserData.GetUserById(db.DB, id)
+	_, err := oldUserData.GetUserById(db.DB, userId)
 	if err != nil {
 		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
-			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, userId), http.StatusNotFound, err)
 			return
 		}
-		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, userId), http.StatusNotFound, err)
 		return
 	}
 	if !oldUserData.IsActive {
-		utils.JsonResponse(map[string]interface{}{"user_id": id}, w, utils.RequestUserIsDeactivated, http.StatusForbidden)
+		utils.JsonResponse(map[string]interface{}{"user_id": userId}, w, utils.RequestUserIsDeactivated, http.StatusForbidden)
 		return
 	}
 
 	if len(newUserData.Email) > 0 {
 		_, err := oldUserData.GetUserByEmail(db.DB, newUserData.Email)
-		if err == nil && &oldUserData != nil && id != oldUserData.ID {
+		if err == nil && &oldUserData != nil && userId != oldUserData.ID {
 			utils.JsonError(w, utils.EmailAlreadyExistsError, http.StatusConflict, nil)
 			return
 		}
@@ -252,26 +239,26 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	updatedFields := trackUpdatedUserFields(oldUserData, newUserData)
 	if len(updatedFields) == 0 {
-		utils.JsonResponse(oldUserData, w, fmt.Sprintf(utils.UserNotModified, id), http.StatusNotModified)
+		utils.JsonResponse(oldUserData, w, fmt.Sprintf(utils.UserNotModified, userId), http.StatusNotModified)
 		return
 	}
 
-	if _, err := oldUserData.UpdateUser(db.DB, id, updatedFields); err != nil {
-		utils.JsonResponse(oldUserData, w, fmt.Sprintf(utils.UserUpdateError, id), http.StatusInternalServerError)
+	if _, err := oldUserData.UpdateUser(db.DB, userId, updatedFields); err != nil {
+		utils.JsonResponse(oldUserData, w, fmt.Sprintf(utils.UserUpdateError, userId), http.StatusInternalServerError)
 		return
 	}
 
-	userResponse, err := oldUserData.GetUserById(db.DB, id)
+	userResponse, err := oldUserData.GetUserById(db.DB, userId)
 	if err != nil {
 		if strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()) {
-			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+			utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, userId), http.StatusNotFound, err)
 			return
 		}
-		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, id), http.StatusNotFound, err)
+		utils.JsonError(w, fmt.Sprintf(utils.UserNotFoundError, userId), http.StatusNotFound, err)
 		return
 	}
 
-	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserUpdatedSuccessfully, id), http.StatusOK)
+	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserUpdatedSuccessfully, userId), http.StatusOK)
 }
 
 func (db *Service) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -369,10 +356,6 @@ func (db *Service) ActivateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
-	if ok := utils.CheckRequestMethod(w, r, http.MethodPost); !ok {
-		return
-	}
-
 	var loginData models.LoginUser
 	if err := json.NewDecoder(r.Body).Decode(&loginData); err != nil {
 		utils.JsonError(w, utils.InvalidUserDataError, http.StatusBadRequest, err)
@@ -383,13 +366,14 @@ func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
 	user, err := userRequest.GetUserByEmail(db.DB, loginData.Email)
 	if err != nil {
 		if strings.Contains(err.Error(), utils.RequestUserIsDeactivated) {
+		} else if strings.Contains(err.Error(), utils.UserIsNotVerifiedError) {
 		} else if ok := customEmailErrorMessage(w, err, loginData.Email); !ok {
 			return
 		}
 	}
 
 	if ok, err := utils.CompareHashedPassword(user.Password, loginData.Password); !ok {
-		utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, err)
+		utils.JsonError(w, "Invalid email or password", http.StatusUnauthorized, err)
 		return
 	}
 
@@ -432,7 +416,9 @@ func (db *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) 
 	var user models.User
 	userData, err := user.GetUserByEmail(db.DB, request.Email)
 	if err != nil {
-		if ok := customEmailErrorMessage(w, err, request.Email); !ok {
+		if strings.Contains(err.Error(), utils.UserIsNotVerifiedError) {
+		} else if strings.Contains(err.Error(), utils.RequestUserIsDeactivated) {
+		} else if ok := customEmailErrorMessage(w, err, request.Email); !ok {
 			return
 		}
 	}
@@ -464,7 +450,7 @@ func (db *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	//check password security
 	if err := utils.CheckPasswordSecurity(request.NewPassword); err != nil {
-		utils.JsonErrorWithExtra(w, utils.InvalidPasswordError, http.StatusBadRequest, err)
+		utils.JsonErrorWithExtra(w, utils.InvalidPasswordError, http.StatusBadRequest, err, map[string]interface{}{"function": "ResetPassword"})
 		return
 	}
 

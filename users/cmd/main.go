@@ -13,6 +13,7 @@ import (
 	"os"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
@@ -25,6 +26,11 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		utils.JsonResponse(nil, w, "Hello World", 0)
+	})
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"X-Requested-With", "Content-Type", "Authorization"},
 	})
 
 	r.Handle("/admin", middlewares.AuthMiddleware(middlewares.RoleMiddleware(db, "admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +47,7 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("Server starting on port %s", port)
-	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
+	if err := http.ListenAndServe("localhost:"+port, c.Handler(r)); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
