@@ -87,7 +87,7 @@ func (db *AdrServices) AddAddress(w http.ResponseWriter, r *http.Request) {
 				errStr += ", "
 			}
 		}
-		utils.JsonErrorWithExtra(w, "invalid address", http.StatusBadRequest, fmt.Errorf(errStr))
+		utils.JsonErrorWithExtra(w, "invalid address", http.StatusBadRequest, fmt.Errorf(errStr), errs)
 		return
 	}
 

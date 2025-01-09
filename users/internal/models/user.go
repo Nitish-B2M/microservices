@@ -5,7 +5,6 @@ import (
 	"e-commerce-backend/users/dbs"
 	"e-commerce-backend/users/pkg/payloads"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -91,9 +90,9 @@ func (user *User) GetUserByEmail(db *gorm.DB, email string) (*User, error) {
 	if !user.IsActive {
 		return user, errors.New(utils.RequestUserIsDeactivated)
 	}
-	if ok := user.IsEmailVerified(db, email); !ok {
-		return user, fmt.Errorf(utils.UserIsNotVerifiedError)
-	}
+	//if ok := user.IsEmailVerified(db, email); !ok {
+	//	return user, fmt.Errorf(utils.UserIsNotVerifiedError)
+	//}
 	return user, nil
 }
 

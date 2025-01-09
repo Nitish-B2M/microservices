@@ -3,9 +3,10 @@ package models
 import (
 	"e-commerce-backend/shared/utils"
 	"e-commerce-backend/users/dbs"
-	"gorm.io/gorm"
 	"log"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Address struct {
