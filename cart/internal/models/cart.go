@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,14 +31,20 @@ func InitCartSchema() {
 	}
 }
 
+var cartMutex sync.Mutex
+
 type CartService interface {
-	AddToCart(db *gorm.DB, cart Cart) (int, error)
-	GetCartByUserId(db *gorm.DB, userId string) (Cart, error)
-	RemoveItemFromCart(db *gorm.DB, cartId int) error
-	GetCartByCartId(db *gorm.DB, cartId int)
+	AddToCart(db *gorm.DB) (Cart, error)
+	GetCartByUserId(db *gorm.DB, userId int) ([]Cart, error)
+	RemoveItemFromCart(db *gorm.DB, cartId, quantity int) error
+	GetCartByCartId(db *gorm.DB, cartId int) error
 }
 
 func (c *Cart) AddToCart(db *gorm.DB) (Cart, error) {
+	//avoid race condition
+	cartMutex.Lock()
+	defer cartMutex.Unlock()
+
 	var cart Cart
 	if err := db.First(&cart, "user_id =? and product_id =?", c.UserId, c.ProductId).Error; err != nil {
 		if strings.EqualFold(err.Error(), gorm.ErrRecordNotFound.Error()) {
@@ -69,7 +76,7 @@ func (c *Cart) AddToCart(db *gorm.DB) (Cart, error) {
 }
 
 func (c *Cart) UpdateCart(db *gorm.DB) error {
-	if err := db.Model(&c).Update("quantity", c.Quantity).Error; err != nil {
+	if err := db.Model(&c).Where("id=?", c.Id).Update("quantity", c.Quantity).Error; err != nil {
 		return err
 	}
 	return nil
