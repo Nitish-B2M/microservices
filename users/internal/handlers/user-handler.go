@@ -30,5 +30,6 @@ func UserHandler(r *mux.Router) {
 	r.Handle("/user/address/add", middlewares.AuthMiddleware(http.HandlerFunc(addressService.AddAddress))).Methods(http.MethodPost)
 	r.Handle("/user/address/all", middlewares.AuthMiddleware(http.HandlerFunc(addressService.GetAddressByUserId))).Methods(http.MethodGet)
 	r.Handle("/user/address/delete/{id}", middlewares.AuthMiddleware(http.HandlerFunc(addressService.DeleteAddress))).Methods(http.MethodDelete)
-	r.Handle("/user/address/update/{id}", middlewares.AuthMiddleware(http.HandlerFunc(addressService.UpdateAddress))).Methods(http.MethodPatch)
+	r.Handle("/user/address/update/{id}", middlewares.AuthMiddleware(http.HandlerFunc(addressService.UpdateAddress))).Methods(http.MethodPut)
+	r.Handle("/user/address/set-primary/{id}", middlewares.AuthMiddleware(http.HandlerFunc(addressService.SetPrimaryAddress))).Methods(http.MethodPut)
 }

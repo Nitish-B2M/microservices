@@ -2,8 +2,10 @@ package utils
 
 import (
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"log"
+	"net/http"
 	"os"
 	"reflect"
 )
@@ -49,7 +51,7 @@ func GetCartMicroserviceLink(extra string) string {
 	if err := godotenv.Load("../../.env"); err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	productBaseUrl := "http://localhost:" + os.Getenv("CART_PORT") + "/user/%d/cart"
+	productBaseUrl := "http://localhost:" + os.Getenv("CART_PORT") + "/user/cart"
 	if extra != "" {
 		productBaseUrl = productBaseUrl + extra
 	}
@@ -60,7 +62,7 @@ func GetPaymentMicroserviceLink(extra string) string {
 	if err := godotenv.Load("../../.env"); err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	paymentBaseUrl := "http://localhost:" + os.Getenv("PAYMENT_PORT") + "/order/%d/payment"
+	paymentBaseUrl := "http://localhost:" + os.Getenv("PAYMENT_PORT") + "/order/%s/payment"
 	if extra != "" {
 		paymentBaseUrl = paymentBaseUrl + extra
 	}
@@ -88,4 +90,20 @@ func ErrorsToString(errs []error) string {
 		}
 	}
 	return errStr
+}
+
+func GetUserIdFromContext(r *http.Request) int {
+	userId, ok := r.Context().Value(UserIDKey).(int)
+	if !ok {
+		return 0
+	}
+	return userId
+}
+
+func GetUserFromGinCtx(c *gin.Context) (int, error) {
+	ctxUserId, ok := c.Get(UserIDKey)
+	if !ok {
+		return 0, fmt.Errorf(UserIdNotFoundInCtx)
+	}
+	return ctxUserId.(int), nil
 }
