@@ -30,6 +30,8 @@ const (
 	InvalidProductIDError         = "invalid product ID provided"
 	InvalidProductDataError       = "invalid data provided for product creation or update"
 	InvalidProductRequest         = "invalid product request"
+	ProductsFetchError            = "error occurred while fetching products"
+	CategoryParamRequired         = "category parameter is required"
 	ProductUnexpectedFetchError   = "unexpected error fetching product for update"
 	ProductUnexpectedUpdateError  = "unexpected error while updating product"
 	ProductTagUpdateError         = "failed to update tags for product with ID %d"
@@ -45,12 +47,13 @@ const (
 
 // Info messages
 const (
-	ProductsFetchedSuccessfully = "all products fetched successfully"
-	ProductFetchedSuccessfully  = "fetched product successfully with ID %d"
-	ProductCreatedSuccessfully  = "product created successfully with ID %d"
-	ProductUpdatedSuccessfully  = "product updated successfully with ID %d"
-	ProductDeletedSuccessfully  = "product deleted successfully with ID %d"
-	ProductNotModified          = "no updates required for product with ID %d"
+	ProductsFetchedSuccessfully        = "all products fetched successfully"
+	ProductFetchedSuccessfully         = "fetched product successfully with ID %d"
+	ProductCreatedSuccessfully         = "product created successfully with ID %d"
+	ProductUpdatedSuccessfully         = "product updated successfully with ID %d"
+	ProductDeletedSuccessfully         = "product deleted successfully with ID %d"
+	ProductNotModified                 = "no updates required for product with ID %d"
+	ProductCategoryFetchedSuccessfully = "products in category '%s' fetched successfully"
 )
 
 // ************Tag*************
@@ -159,7 +162,7 @@ const (
 	CartItemUpdateError          = "error occurred while updating item in cart"
 	CartItemDeletionError        = "error occurred while deleting item from cart"
 	CartOutOfStockError          = "item with ID %d is out of stock"
-	CartInvalidItemQuantity      = "invalid quantity for item with ID %d"
+	InvalidCartRequest           = "invalid cart request"
 	CartInvalidProductError      = "invalid product for item with ID %d"
 	CartUnexpectedFetchError     = "unexpected error fetching cart data"
 	CartUnexpectedUpdateError    = "unexpected error updating cart data"
@@ -193,10 +196,11 @@ const (
 
 // *************** Order *****************
 const (
-	OrderSuccessful   = "order successfully created"
-	OrderFetchSuccess = "order with orderId %d fetch successfully"
-	OrderIdInvalid    = "order id %s is invalid"
-	OrderIdRequired   = "order id is required"
+	OrderCreatedSuccessfully  = "order successfully created"
+	OrderFetchSuccess         = "order with orderId %s fetch successfully"
+	OrderIdInvalid            = "order id %s is invalid"
+	OrderIdRequired           = "order id is required"
+	OrdersFetchedSuccessfully = "orders fetched successfully"
 )
 
 const (

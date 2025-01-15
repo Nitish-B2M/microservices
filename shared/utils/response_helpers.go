@@ -40,6 +40,42 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 	}
 }
 
+func JsonResponseWithExtra(data interface{}, w http.ResponseWriter, message string, status int, extraData interface{}) {
+	if status == 0 {
+		status = http.StatusOK
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	cw := NewCustomResponseWriter(w)
+	cw.WriteHeader(status)
+
+	res, err := json.Marshal(data)
+	if err != nil {
+		LogError("error marshaling data", map[string]interface{}{"error": err})
+		http.Error(cw, InternalServerError, http.StatusInternalServerError)
+		return
+	}
+	res1 := shortResponseData(res)
+	messageLog := map[string]interface{}{"data": res1}
+	if extraData != nil {
+		messageLog = map[string]interface{}{"additional": extraData, "data": res1}
+	}
+
+	LogInfo("sending response", messageLog)
+
+	resp := map[string]interface{}{
+		"message": message,
+		"data":    data,
+	}
+
+	if status != 304 {
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			LogError("error while encoding final response", map[string]interface{}{"error": err})
+			http.Error(cw, FailedToSendResponse, http.StatusInternalServerError)
+		}
+	}
+}
+
 func JsonResponseWithError(data interface{}, w http.ResponseWriter, message string, status int, errors []error) {
 	if status == 0 {
 		status = http.StatusOK
@@ -88,8 +124,12 @@ func JsonError(w http.ResponseWriter, message string, status int, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err error) {
-	LogError(message, map[string]interface{}{"error": err})
+func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err error, extraInfo interface{}) {
+	messageLog := map[string]interface{}{"error": err}
+	if extraInfo != nil {
+		messageLog = map[string]interface{}{"extra": extraInfo, "error": err}
+	}
+	LogError(message, messageLog)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -99,8 +139,8 @@ func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err e
 func shortResponseData(message []byte) string {
 	res1 := ""
 	res := string(message)
-	if len(res) > 100 {
-		res1 = strings.TrimSpace(res[:100]) + "...."
+	if len(res) > 120 {
+		res1 = strings.TrimSpace(res[:120]) + "...."
 	} else {
 		res1 = res
 	}

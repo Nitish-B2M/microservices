@@ -10,18 +10,21 @@ import (
 )
 
 type Address struct {
-	Id          int       `json:"address_id" gorm:"primaryKey;autoIncrement"`
-	UserId      int       `json:"user_id" gorm:"not null"`
-	Street      string    `json:"street" gorm:"not null;type:varchar(100)"`
-	Area        string    `json:"area" gorm:"not null;type:varchar(60)"`
-	City        string    `json:"city" gorm:"not null;type:varchar(100)"`
-	State       string    `json:"state" gorm:"not null;type:varchar(25)"`
-	PostalCode  string    `json:"postal_code" gorm:"not null;type:varchar(6)"`
-	Country     string    `json:"country" gorm:"not null"`
-	IsPrimary   bool      `json:"is_primary" gorm:"default:false"`
-	AddressType string    `json:"address_type" gorm:"type:varchar(20)"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	Id               int       `json:"address_id" gorm:"primaryKey;autoIncrement"`
+	UserId           int       `json:"user_id" gorm:"not null"`
+	FullName         string    `json:"full_name" gorm:"not null;type:varchar(100)"`
+	Street           string    `json:"street" gorm:"not null;type:varchar(100)"`
+	Area             string    `json:"area" gorm:"not null;type:varchar(60)"`
+	City             string    `json:"city" gorm:"not null;type:varchar(100)"`
+	State            string    `json:"state" gorm:"not null;type:varchar(25)"`
+	PostalCode       string    `json:"postal_code" gorm:"not null;type:varchar(6)"`
+	Country          string    `json:"country" gorm:"not null"`
+	IsPrimary        bool      `json:"is_primary" gorm:"default:false"`
+	Phone            string    `json:"phone_number" gorm:"not null;type:varchar(20)"`
+	AddressType      string    `json:"address_type" gorm:"type:varchar(20)"`
+	OtherAddressType string    `json:"address_type_other" gorm:"type:varchar(100)"`
+	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func InitAddressSchemas() {
@@ -69,4 +72,19 @@ func (adr *Address) UpdateAddress(db *gorm.DB, userId int) error {
 
 func (adr *Address) DeleteAddress(db *gorm.DB, adrId, userId int) error {
 	return db.Where("user_id =? and id =?", userId, adrId).Delete(adr).Error
+}
+
+func (adr *Address) SetPrimaryAddress(db *gorm.DB, userId int) error {
+	addresses, _ := adr.GetAddressByUserId(db, userId)
+	for _, a := range addresses {
+		if a.Id == adr.Id {
+			a.IsPrimary = true
+		} else {
+			a.IsPrimary = false
+		}
+		if err := a.UpdateAddress(db, userId); err != nil {
+			return err
+		}
+	}
+	return nil
 }
