@@ -43,6 +43,7 @@ const (
 	InSufficientProductStockError = "insufficient stock for product %s"
 	ErrorProductMicroservices     = "error occurred while calling product microservice"
 	ProductQuantityUpdated        = "product quantity updated successfully"
+	CategoryNotFoundError         = "product category not found"
 )
 
 // Info messages
@@ -54,6 +55,7 @@ const (
 	ProductDeletedSuccessfully         = "product deleted successfully with ID %d"
 	ProductNotModified                 = "no updates required for product with ID %d"
 	ProductCategoryFetchedSuccessfully = "products in category '%s' fetched successfully"
+	CategoriesFetchedSuccessfully      = "all categories fetched successfully"
 )
 
 // ************Tag*************
@@ -172,6 +174,7 @@ const (
 
 // Info messages
 const (
+	CartClearedSuccessfully     = "cart cleared successfully for user with ID %d"
 	CartFetchedSuccessfully     = "cart fetched successfully for user with ID %d"
 	CartItemAddedSuccessfully   = "item with ID %d added to cart successfully"
 	CartItemUpdatedSuccessfully = "item with ID %d updated in cart successfully"

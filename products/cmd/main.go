@@ -8,6 +8,7 @@ import (
 	"e-commerce-backend/shared/utils"
 	"fmt"
 	"github.com/joho/godotenv"
+	"github.com/rs/cors"
 	"log"
 	"net/http"
 	"os"
@@ -32,6 +33,12 @@ func main() {
 		fmt.Fprintf(w, "Admin")
 	}))))
 
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"X-Requested-With", "Content-Type", "Authorization"},
+	})
+
 	handlers.ProductHandler(r)
 
 	if err := godotenv.Load("../../.env"); err != nil {
@@ -43,7 +50,7 @@ func main() {
 	}
 
 	log.Printf("Server starting on port %s", port)
-	if err := http.ListenAndServe("localhost:"+port, r); err != nil {
+	if err := http.ListenAndServe("localhost:"+port, c.Handler(r)); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
