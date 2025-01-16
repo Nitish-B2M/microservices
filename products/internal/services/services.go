@@ -20,18 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type FilterCriteria struct {
-	PName       string   `json:"p_name"`
-	MinPrice    float64  `json:"min_price"`
-	MaxPrice    float64  `json:"max_price"`
-	MinRating   float64  `json:"min_rating"`
-	Category    string   `json:"category"`
-	IsDeleted   bool     `json:"is_deleted"`
-	MinQuantity int      `json:"min_quantity"`
-	MaxQuantity int      `json:"max_quantity"`
-	Tags        []string `json:"tags"`
-}
-
 const ProductAddQuanMethod = "add"
 const ProductSubQuanMethod = "subtract"
 
@@ -118,6 +106,17 @@ func (db *Service) GetProductById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.JsonResponse(productResp, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
+}
+
+func (db *Service) FetchCategories(w http.ResponseWriter, r *http.Request) {
+	var p models.Product
+	categories, err := p.FetchProductCategories(db.DB)
+	if err != nil {
+		utils.JsonError(w, utils.CategoryNotFoundError, http.StatusNotFound, err)
+		return
+	}
+
+	utils.JsonResponse(categories, w, utils.CategoriesFetchedSuccessfully, http.StatusOK)
 }
 
 func (db *Service) AddProduct(w http.ResponseWriter, r *http.Request) {
@@ -254,29 +253,6 @@ func (db *Service) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(nil, w, fmt.Sprintf(utils.ProductDeletedSuccessfully, id), http.StatusOK)
 }
 
-func (db *Service) FilterProducts(w http.ResponseWriter, r *http.Request) {
-	criteria := FilterCriteria{}
-
-	query := r.URL.Query()
-	fmt.Println("query:", query)
-
-	FilterKey := []string{
-		"p_name", "min_price", "max_price", "min_rating", "category",
-		"is_deleted", "min_quantity", "max_quantity", "tags",
-	}
-
-	for k, v := range query {
-		if HasKey(FilterKey, k) {
-			if err := SetField(&criteria, k, v[0]); err != nil {
-				utils.SimpleLog("error", fmt.Sprintf("Error setting field: %v", err))
-			}
-		}
-	}
-
-	resp := FilterOutProducts(criteria)
-	utils.JsonResponse(resp, w, "filtered data", 0)
-}
-
 func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Request) {
 	productID := getProductID(r.URL.Path)
 	if productID == 0 {
@@ -379,10 +355,10 @@ func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.R
 	}
 
 	if err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.ProductUnexpectedUpdateError), http.StatusInternalServerError, err)
+		utils.JsonErrorWithExtra(w, err.Error(), http.StatusInternalServerError, err, "UpdateProductQuantityHandler")
 		return
 	}
-	utils.JsonResponse(productResp, w, utils.ProductQuantityUpdated, http.StatusOK)
+	utils.JsonResponseWithExtra(productResp, w, utils.ProductQuantityUpdated, http.StatusOK, "UpdateProductQuantityHandler")
 }
 
 func SubtractQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResponse, error) {
@@ -417,7 +393,6 @@ func AddQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResp
 	if err := product.CheckProductExistsById(db, productID); err != nil {
 		return productResp, err
 	}
-
 	product.Quantity += quantity
 
 	// Save the updated product back to the database
@@ -447,12 +422,12 @@ func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request)
 	}
 
 	response := map[string]interface{}{
-		"id":           productResp.ID,
-		"product_name": productResp.PName,
-		"description":  productResp.PDesc,
-		"price":        productResp.Price,
-		"quantity":     productResp.Quantity,
-		"discount":     productResp.Discount,
+		"id":          productResp.ID,
+		"name":        productResp.PName,
+		"description": productResp.PDesc,
+		"price":       productResp.Price,
+		"quantity":    productResp.Quantity,
+		"discount":    productResp.Discount,
 	}
 
 	utils.JsonResponse(response, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
