@@ -3,7 +3,6 @@ package models
 import (
 	"e-commerce-backend/cart/dbs"
 	"e-commerce-backend/shared/utils"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -32,6 +31,17 @@ func InitCartSchema() {
 	}
 }
 
+func (c *Cart) NewCart() *Cart {
+	return &Cart{
+		UserId:      c.UserId,
+		ProductId:   c.ProductId,
+		Quantity:    c.Quantity,
+		IsProcessed: false,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+}
+
 var cartMutex sync.Mutex
 
 type CartService interface {
@@ -45,6 +55,7 @@ func (c *Cart) AddToCart(db *gorm.DB) (Cart, error) {
 	//avoid race condition
 	cartMutex.Lock()
 	defer cartMutex.Unlock()
+	c.IsProcessed = false
 
 	var cart Cart
 	if err := db.First(&cart, "user_id =? and product_id =?", c.UserId, c.ProductId).Error; err != nil {
@@ -108,28 +119,9 @@ func (c *Cart) GetCartByCartId(db *gorm.DB, cartId int) error {
 	return nil
 }
 
-func (c *Cart) RemoveItemFromCart(db *gorm.DB, cartId, quantity int) error {
-	if err := db.Where("id =? and is_processed = false", cartId).Find(&c).Error; err != nil {
+func (c *Cart) DeleteCartItem(db *gorm.DB) error {
+	if err := db.Where("id =? and is_processed = false", c.Id).Delete(&c).Error; err != nil {
 		return err
 	}
-	if c.Quantity == quantity {
-		//if err := db.Delete(&Cart{}, "id=?", cartId).Error; err != nil {
-		//	return err
-		//}
-		if err := db.Update("is_processed", true).Error; err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if c.Quantity < quantity {
-		return errors.New("remove quantity cannot be more than quantity added in cart")
-	}
-
-	if c.Quantity > quantity {
-		totalQuantity := c.Quantity - quantity
-		return db.Model(&c).Update("quantity", totalQuantity).Error
-	}
-
 	return nil
 }
