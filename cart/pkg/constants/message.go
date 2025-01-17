@@ -2,7 +2,6 @@ package constants
 
 const (
 	ProductMicroserviceGetProductCall       = "http://localhost:8081/product/%d/cart"
-	ProductMicroserviceUpdateQuantityCall   = "http://localhost:8081/product/%d/update-quantity"
 	FailedToUpdateProductQuantity           = "failed to update product %d quantity: %v\n"
 	FailedToUpdateProductQuantityWithStatus = "failed to update product %d quantity: Status Code %d\n"
 	SuccessfullyUpdatedProductQuantity      = "successfully updated quantity for product %d\n"
