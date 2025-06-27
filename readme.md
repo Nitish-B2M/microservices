@@ -103,3 +103,4 @@ This section outlines the responsibilities and communication patterns between th
 | **Queue Service**   | - Handles message brokering, decouples services                                  | All services (as event consumers/producers)        | Asynchronous (Event-based)        |
 
 ---
+
