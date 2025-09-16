@@ -1,6 +1,7 @@
+// Package utils email-template
 package utils
 
-const USER_CREATED_TEMPLATE = `
+const UserCreatedTemplate = `
 Hello {{.Email}},<br><br>
 Your account has been successfully created. Welcome to our platform!<br><br>
 

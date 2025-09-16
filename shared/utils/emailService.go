@@ -3,11 +3,12 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	"github.com/joho/godotenv"
-	"gopkg.in/gomail.v2"
 	"html/template"
 	"log"
 	"os"
+
+	"github.com/joho/godotenv"
+	"gopkg.in/gomail.v2"
 )
 
 type UserCreation struct {
@@ -45,7 +46,7 @@ func SendEmail(to string, subject string, body string) error {
 }
 
 func GenerateUserCreationMessage(user UserCreation) (string, error) {
-	tmpl, err := template.New("user_created").Parse(USER_CREATED_TEMPLATE)
+	tmpl, err := template.New("user_created").Parse(UserCreatedTemplate)
 	if err != nil {
 		return "", fmt.Errorf(TemplateParsingFailed, err)
 	}
