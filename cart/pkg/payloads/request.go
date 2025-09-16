@@ -5,9 +5,9 @@ type CartRequest struct {
 }
 
 type CartItem struct {
-	Id        int `json:"cart_id"`
-	ProductID int `json:"product_id"`
-	Quantity  int `json:"quantity"`
+	Id        int    `json:"cart_id"`
+	ProductID string `json:"product_id"`
+	Quantity  int    `json:"quantity"`
 }
 
 type CartRemoveRequest struct {
@@ -15,9 +15,9 @@ type CartRemoveRequest struct {
 }
 
 type CartRemoveItem struct {
-	Id        int `json:"cart_id"`
-	ProductID int `json:"product_id"`
-	Quantity  int `json:"quantity"`
+	Id        int    `json:"cart_id"`
+	ProductID string `json:"product_id"`
+	Quantity  int    `json:"quantity"`
 }
 
 type CartQtyUpdateRequest struct {
