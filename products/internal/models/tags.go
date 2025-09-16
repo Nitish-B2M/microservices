@@ -1,176 +1,154 @@
 package models
 
 import (
-	"e-commerce-backend/products/dbs"
-	"e-commerce-backend/shared/utils"
+	"e-commerce-backend/products/pkg/payloads"
 	"errors"
 	"fmt"
-	"log"
+	"strings"
 
 	"gorm.io/gorm"
 )
 
-type Tag struct {
-	ID   int    `json:"id"`
-	Name string `json:"name" gorm:"unique;not null"`
+// EntityType constants
+const (
+	EntityTypeTag      = "tag"
+	EntityTypeCategory = "category"
+	EntityTypeBrand    = "brand"
+)
+
+func CheckLabelExists(db *gorm.DB, label string, labelType string) error {
+	var entity Entities
+	return db.Where("entity = ? AND entity_type = ?", strings.ToLower(label), labelType).First(&entity).Error
 }
 
-func NewTag() *Tag {
-	return &Tag{}
+func CreateEntity(db *gorm.DB, entity string, entityType string) (uint, error) {
+	newEntity := Entities{
+		EntityName: strings.ToLower(entity),
+		EntityType: entityType,
+	}
+	if err := db.Create(&newEntity).Error; err != nil {
+		return 0, fmt.Errorf("failed to create entity: %v", err)
+	}
+	return newEntity.EID, nil
 }
 
-func InitTagSchema() {
-	db := dbs.DB
-	if err := db.AutoMigrate(&Tag{}); err != nil {
-		log.Fatalf(utils.DatabaseMigrationError, "Tag", err)
-	} else {
-		log.Printf(utils.SchemaMigrationSuccess, "Tag")
+func StoreProductEntity(db *gorm.DB, entityID uint, entityType string, productID string) (ProductEntity, error) {
+	productEntity := ProductEntity{
+		EntityID:   entityID,
+		ProductID:  productID,
+		EntityType: entityType,
 	}
+	if err := db.Create(&productEntity).Error; err != nil {
+		return ProductEntity{}, fmt.Errorf("failed to create product entity: %v", err)
+	}
+	return productEntity, nil
 }
 
-func CreateTag(db *gorm.DB, tagName string) (int, error) {
-	tag := Tag{Name: tagName}
-	if err := db.Create(&tag).Error; err != nil {
-		return 0, fmt.Errorf("failed to create tag: %v", err)
-	}
-	return tag.ID, nil
-}
+func CheckAndCreateTags(db *gorm.DB, tags []string, productID string) ([]ProductEntity, error) {
+	var tagsResp []ProductEntity
 
-func FetchTagById(db *gorm.DB, tagId int) (*Tag, error) {
-	var tag Tag
-	if err := db.First(&tag, tagId).Error; err != nil {
-		return nil, err
-	}
-	return &tag, nil
-}
-
-func GetTagsByProductId(db *gorm.DB, productId int) ([]Tag, error) {
-	var tags []Tag
-	if err := db.Select("id").Where("product_id = ?", productId).Find(&tags).Error; err != nil {
-		return nil, err
-	}
-	return tags, nil
-}
-
-func CheckAndCreateProductTags(db *gorm.DB, tags []string, pId int) ([]int, map[string]error) {
-	tagErrors := make(map[string]error)
-	var tagIds []int
-
-	if len(tags) == 0 || tags == nil {
-		if pId == 0 {
-		} else {
-			existingTags, err := GetTagsByProductId(db, pId)
-			if err != nil {
-				return []int{}, tagErrors
-			}
-			if len(existingTags) > 0 {
-				var existingTagIds []int
-				for _, tag := range existingTagIds {
-					tagIds = append(tagIds, tag)
-				}
-				return existingTagIds, tagErrors
-			}
-		}
-		return tagIds, tagErrors
-	}
-
-	for i := range tags {
-		var tag Tag
-		tagName := tags[i]
-		if err := db.Where("name = ?", tagName).First(&tag).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.SimpleLog("info", fmt.Sprintf(utils.TagNotExist, tagName))
-				id, err := CreateTag(db, tagName)
-				if err != nil {
-					utils.SimpleLog("error", err.Error())
-					tagErrors[tagName] = fmt.Errorf(utils.TagCreationFailed, err)
-				}
-				tagIds = append(tagIds, id)
-			} else {
-				tagErrors[tagName] = fmt.Errorf(utils.TagExistError, err)
-			}
-		} else {
-			tagIds = append(tagIds, tag.ID)
-		}
-	}
-	return tagIds, tagErrors
-}
-
-func AddTagToProduct(db *gorm.DB, tagIds []int, productID int) []error {
-	var errs []error
-	for _, tagID := range tagIds {
-		productTag := ProductTag{
-			ProductID: productID,
-			TagID:     tagID,
-		}
-		if err := db.Create(&productTag).Error; err != nil {
-			errs = append(errs, fmt.Errorf("failed to create product[%d]-tag[%d] association: %v", tagID, productID, err))
-		}
-	}
-	if len(errs) > 0 {
-		return errs
-	}
-	return nil
-}
-
-func RemoveTagToProduct(db *gorm.DB, tagIds []int, productID int) []error {
-	if err := db.Where("product_id = ? AND tag_id IN ?", productID, tagIds).Delete(&ProductTag{}).Error; err != nil {
-		return []error{fmt.Errorf("failed to delete product-tag associations: %v", err)}
-	}
-
-	return nil
-}
-
-func UpdateTagToProduct(db *gorm.DB, newTagIds []int, productID int) []error {
-	var errs []error
-	var productTags []ProductTag
-
-	if err := db.Where("product_id =?", productID).Find(&productTags).Error; err != nil {
-
-	}
-
-	tagLookup := make(map[int]bool)
-	for _, tagID := range newTagIds {
-		tagLookup[tagID] = true
-	}
-
-	var addTags []int
-	var removeTags []int
-	for _, pTag := range productTags {
-		if tagLookup[pTag.TagID] {
+	for _, tagName := range tags {
+		tagName = strings.ToLower(strings.TrimSpace(tagName))
+		if tagName == "" {
 			continue
-		} else {
-			removeTags = append(removeTags, pTag.TagID)
-			tagLookup[pTag.TagID] = true
 		}
-	}
 
-	for _, tagID := range newTagIds {
-		tagFound := false
-		for _, pTag := range productTags {
-			if pTag.TagID == tagID {
-				tagFound = true
-				break
+		// Try to find existing tag
+		var tag Entities
+		err := db.Where("entity = ?", tagName).First(&tag).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				tag = Entities{EntityName: tagName, EntityType: "tag"}
+				if err := db.Create(&tag).Error; err != nil {
+					return nil, fmt.Errorf("failed to create tag %s: %v", tagName, err)
+				}
+			} else {
+				return nil, fmt.Errorf("error checking tag %s: %v", tagName, err)
+			}
+		} else {
+			if tag.EntityType != "tag" {
+				return nil, fmt.Errorf("tag %s is not a tag", tagName)
 			}
 		}
 
-		if !tagFound {
-			addTags = append(addTags, tagID)
+		// Now insert into the ProductEntity table using tag.EntityID
+		productTagEntity := ProductEntity{
+			EntityID:   tag.EID,
+			EntityType: "tag",
+			ProductID:  productID,
+		}
+		err = db.Create(&productTagEntity).Error
+		if err != nil {
+			return nil, fmt.Errorf("failed to link tag %s to product: %v", tagName, err)
+		}
+
+		tagsResp = append(tagsResp, productTagEntity)
+	}
+
+	return tagsResp, nil
+}
+
+func CheckAndCreateCategoryOrBrand(db *gorm.DB, entity string, entityType string, productID string) (*ProductEntity, error) {
+	if entityType != EntityTypeCategory && entityType != EntityTypeBrand {
+		return nil, fmt.Errorf("invalid entity type: %s", entityType)
+	}
+
+	entity = strings.ToLower(strings.TrimSpace(entity))
+	if entity == "" {
+		return nil, nil
+	}
+
+	// Try to find existing entity
+	var existingEntity Entities
+	err := db.Where("entity = ? AND entity_type = ?", entity, entityType).First(&existingEntity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Create new entity
+			entityID, err := CreateEntity(db, entity, entityType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create %s %s: %v", entityType, entity, err)
+			}
+			existingEntity.EID = entityID
+			existingEntity.EntityName = entity
+		} else {
+			return nil, fmt.Errorf("error checking %s %s: %v", entityType, entity, err)
 		}
 	}
 
-	utils.SimpleLog("info", "tags to remove:", removeTags)
-	utils.SimpleLog("info", "tags to add:", addTags)
-
-	if len(addTags) > 0 {
-		err := AddTagToProduct(db, addTags, productID)
-		errs = append(errs, err...)
+	// Create or update product-entity relationship
+	productEntity, err := StoreProductEntity(db, existingEntity.EID, entityType, productID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to link %s %s to product: %v", entityType, entity, err)
 	}
 
-	if len(removeTags) > 0 {
-		err := RemoveTagToProduct(db, removeTags, productID)
-		errs = append(errs, err...)
+	return &productEntity, nil
+}
+
+func GetProductEntities(db *gorm.DB, productID string, entityType string) ([]payloads.EntityLabelResponse, error) {
+	var entities []struct {
+		ProductEntityID uint
+		Entity          string
+		EntityType      string
 	}
 
-	return errs
+	err := db.Table("product_entities").
+		Select("product_entities.product_entity_id, entities.entity, entities.entity_type").
+		Joins("JOIN entities ON entities.entity_id = product_entities.entity_id").
+		Where("product_entities.product_id = ? AND product_entities.entity_type = ?", productID, entityType).
+		Scan(&entities).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch entities: %v", err)
+	}
+
+	var response []payloads.EntityLabelResponse
+	for _, e := range entities {
+		response = append(response, payloads.EntityLabelResponse{
+			ProductEntityID: e.ProductEntityID,
+			Entity:          e.Entity,
+			EntityType:      e.EntityType,
+		})
+	}
+
+	return response, nil
 }

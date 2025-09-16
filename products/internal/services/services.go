@@ -1,3 +1,4 @@
+// Package services for product-related operations.
 package services
 
 import (
@@ -7,21 +8,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/mux"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/google/uuid"
 
 	"gorm.io/gorm"
 )
 
 const ProductAddQuanMethod = "add"
 const ProductSubQuanMethod = "subtract"
+
+var productMutex sync.Mutex
 
 type Service struct {
 	DB *gorm.DB
@@ -34,89 +37,69 @@ func NewProduct(db *gorm.DB) *Service {
 }
 
 type Product interface {
+	// old
 	GetProducts(w http.ResponseWriter, r *http.Request)
 	GetProductById(w http.ResponseWriter, r *http.Request)
-	CreateProduct(w http.ResponseWriter, r *http.Request)
+	FetchCategories(w http.ResponseWriter, r *http.Request)
+	AddProduct(w http.ResponseWriter, r *http.Request)
 	UpdateProduct(w http.ResponseWriter, r *http.Request)
 	DeleteProduct(w http.ResponseWriter, r *http.Request)
-	FilterProducts(w http.ResponseWriter, r *http.Request)
 	UploadProductImageHandler(w http.ResponseWriter, r *http.Request)
-}
-
-func trackUpdatedProductFields(oldData models.Product, newData payloads.ProductRequest) map[string]interface{} {
-	updatedFields := make(map[string]interface{})
-	v := reflect.ValueOf(&newData).Elem()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Type().Field(i)
-		fieldName := field.Name
-		fieldValue := v.Field(i)
-		if fieldName == "Tags" {
-			continue
-		}
-		if fieldValue.IsZero() || fieldName == "ID" {
-			continue
-		}
-
-		oldFieldValue := reflect.ValueOf(&oldData).Elem().FieldByName(fieldName)
-
-		if !reflect.DeepEqual(fieldValue.Interface(), oldFieldValue.Interface()) {
-			updatedFields[fieldName] = fieldValue.Interface()
-
-			reflect.ValueOf(&oldData).Elem().FieldByName(fieldName).Set(fieldValue)
-		}
-	}
-
-	return updatedFields
+	UpdateProductQuantityHandler(w http.ResponseWriter, r *http.Request)
+	GetProductByIdForCart(w http.ResponseWriter, r *http.Request)
 }
 
 func (db *Service) GetProducts(w http.ResponseWriter, r *http.Request) {
-	products, err := models.GetProducts()
+	products, err := models.GetProducts(db.DB)
 	if err != nil {
-		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, err[0])
+		utils.ErrorResponseFunc(w, utils.ProductsNotFoundError, http.StatusNotFound, err)
 	}
 
-	utils.JsonResponse(products, w, utils.ProductsFetchedSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.ProductsFetchedSuccessfully, products, http.StatusOK)
 }
 
-func (db *Service) GetProductById(w http.ResponseWriter, r *http.Request) {
-	id, err := utils.GetIDFromPath(r)
+func (db *Service) GetProductsForSeller(w http.ResponseWriter, r *http.Request) {
+	products, err := models.GetProductsForSeller(db.DB)
 	if err != nil {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+		utils.ErrorResponseFunc(w, utils.ProductNotFoundError, http.StatusNotFound, err)
+	}
+
+	utils.SuccessResponseFunc(w, utils.ProductsFetchedSuccessfully, products, http.StatusOK)
+}
+
+func (db *Service) GetProductByID(w http.ResponseWriter, r *http.Request) {
+	if !utils.CheckRequestMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	PID := utils.GetIDFromPathString(r)
+	if PID == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
 		return
 	}
 
 	var product models.Product
-	productResp, err := product.FetchProductResp(db.DB, id)
+	products, err := product.GetProductById(db.DB, PID)
 	if err != nil {
-		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, err)
+		if strings.Contains(err.Error(), utils.ProductNotFoundError) {
+			utils.ErrorResponseFunc(w, utils.ProductNotFoundError, http.StatusNotFound, err)
+			return
+		}
+		utils.ErrorResponseFunc(w, utils.ProductRetrievalError, http.StatusInternalServerError, err)
 		return
 	}
-
-	tags, errs := models.FetchProductTagsName(db.DB, product.ID)
-	if len(errs) > 0 {
-		errStr := utils.ErrorsToString(errs)
-		utils.JsonError(w, utils.FailedToFetchTag, http.StatusNotFound, errors.New(errStr))
-	}
-
-	if tags == nil {
-		productResp.Tags = []string{}
-	} else {
-		productResp.Tags = tags
-	}
-
-	utils.JsonResponse(productResp, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.ProductFetchedSuccessfully, products, http.StatusOK)
 }
 
 func (db *Service) FetchCategories(w http.ResponseWriter, r *http.Request) {
 	var p models.Product
 	categories, err := p.FetchProductCategories(db.DB)
 	if err != nil {
-		utils.JsonError(w, utils.CategoryNotFoundError, http.StatusNotFound, err)
+		utils.ErrorResponseFunc(w, utils.CategoryNotFoundError, http.StatusNotFound, err)
 		return
 	}
 
-	utils.JsonResponse(categories, w, utils.CategoriesFetchedSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.CategoriesFetchedSuccessfully, categories, http.StatusOK)
 }
 
 func (db *Service) AddProduct(w http.ResponseWriter, r *http.Request) {
@@ -124,48 +107,82 @@ func (db *Service) AddProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract seller ID from context/token
+	sellerID := utils.GetStringUserIDFromContext(r)
+	if sellerID == "" {
+		utils.ErrorResponseFunc(w, "Seller ID is required", http.StatusBadRequest, errors.New("missing seller id"))
+		return
+	}
+
 	var newProduct payloads.ProductRequest
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&newProduct); err != nil {
-		utils.JsonError(w, utils.InvalidRequestBody, http.StatusBadRequest, err)
+	if err := json.NewDecoder(r.Body).Decode(&newProduct); err != nil {
+		utils.ErrorResponseFunc(w, utils.InvalidRequestBody, http.StatusBadRequest, err)
 		return
 	}
 
-	if newProduct.PName == "" || newProduct.Price == 0 {
-		utils.JsonError(w, utils.InvalidProductDataError, http.StatusBadRequest, nil)
+	// Validate the product data
+	if ok, err := utils.ValidateStructUsingValidators(newProduct); !ok {
+		errStr := strings.Join(err, ", ")
+		utils.ErrorResponseFunc(w, utils.InvalidProductDataError, http.StatusBadRequest, errors.New(errStr))
 		return
 	}
 
-	var product models.Product
-	if err := models.CopyStructIntoStruct(&newProduct, &product); err != nil {
-		utils.JsonError(w, utils.InvalidProductDataError, http.StatusBadRequest, err)
-		return
+	// Generate UUID for product
+	if newProduct.ID == "" {
+		newProduct.ID = uuid.New().String()
+	}
+	newProduct.SellerID = sellerID
+
+	// Generate slug URL if not provided
+	if newProduct.SlugURL == "" {
+		newProduct.SlugURL = utils.GenerateSlug(newProduct.Name)
 	}
 
-	id, err := product.AddProduct(db.DB)
+	// Generate SKU if not provided
+	if newProduct.SKU == "" {
+		newProduct.SKU = utils.GenerateSKU(newProduct.Name)
+	}
+
+	if len(newProduct.Images) > 0 {
+		for i := range newProduct.Images {
+			if i == 0 {
+				newProduct.Images[i].IsMain = true
+			}
+			if newProduct.Images[i].ID == "" {
+				newProduct.Images[i].ID = uuid.New().String()
+			}
+			newProduct.Images[i].PID = newProduct.ID
+			newProduct.Images[i].SortOrder = i + 1
+			if newProduct.Images[i].URL == "" {
+				filePath, err := models.UploadBase64Image(newProduct.Images[i].Image, newProduct.Images[i].PID, newProduct.Images[i].ID)
+				if err != nil {
+					utils.ErrorResponseFunc(w, utils.ProductCreationError, http.StatusInternalServerError, err)
+					return
+				}
+				newProduct.Images[i].URL = filePath
+			}
+		}
+	}
+
+	category := ""
+	if newProduct.Category != "" {
+		category = newProduct.Category
+	}
+
+	brand := ""
+	if newProduct.Brand != "" {
+		brand = newProduct.Brand
+	}
+
+	product := models.CopyProductRequestToProduct(newProduct)
+	// Save the new product
+	createdProduct, err := product.AddProduct(db.DB, category, brand, newProduct.Tags)
 	if err != nil {
-		utils.JsonError(w, utils.ProductCreationError, http.StatusInternalServerError, err)
-		return
-	}
-	newProduct.ID = id
-
-	tagIds, tagErrors := models.CheckAndCreateProductTags(db.DB, newProduct.Tags, 0)
-	if len(tagErrors) > 0 {
-		utils.JsonError(w, utils.TagCreationFailed, http.StatusBadRequest, nil)
-	}
-
-	if errs := models.AddTagToProduct(db.DB, tagIds, id); len(errs) > 0 {
-		errStr := utils.ErrorsToString(errs)
-		utils.JsonError(w, utils.FailedAddingTagToProduct, http.StatusNotFound, errors.New(errStr))
-	}
-
-	createdProduct, err := product.FetchProductResp(db.DB, id)
-	if err != nil {
-		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, nil)
+		utils.ErrorResponseFunc(w, utils.ProductCreationError, http.StatusInternalServerError, err)
 		return
 	}
 
-	utils.JsonResponse(createdProduct, w, fmt.Sprintf(utils.ProductCreatedSuccessfully, id), http.StatusCreated)
+	utils.SuccessResponseFunc(w, fmt.Sprintf(utils.ProductCreatedSuccessfully, createdProduct.ID), createdProduct, http.StatusCreated)
 }
 
 func (db *Service) UpdateProduct(w http.ResponseWriter, r *http.Request) {
@@ -173,59 +190,42 @@ func (db *Service) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetIDFromPath(r)
-	if err != nil {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+	id := utils.GetIDFromPathString(r)
+	if id == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
 		return
 	}
 
-	var newProduct payloads.ProductRequest
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&newProduct); err != nil {
-		utils.JsonError(w, utils.InvalidRequestBody, http.StatusBadRequest, err)
+	var updatedProduct payloads.ProductRequest
+	if err := json.NewDecoder(r.Body).Decode(&updatedProduct); err != nil {
+		utils.ErrorResponseFunc(w, utils.InvalidRequestBody, http.StatusBadRequest, err)
+		return
+	}
+
+	if ok, err := utils.ValidateStructUsingValidators(updatedProduct); !ok {
+		errStr := strings.Join(err, ", ")
+		utils.ErrorResponseFunc(w, utils.InvalidProductDataError, http.StatusBadRequest, errors.New(errStr))
 		return
 	}
 
 	var existingP models.Product
 	if err := existingP.CheckProductExistsById(db.DB, id); err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
+		utils.ErrorResponseFunc(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
 
-	updatedFields := trackUpdatedProductFields(existingP, newProduct)
-	if len(updatedFields) == 0 {
-		utils.JsonResponse(existingP, w, fmt.Sprintf(utils.UserNotModified, id), http.StatusNotModified)
-		return
-	}
-
-	if err := existingP.UpdateProduct(db.DB, id, updatedFields); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusInternalServerError, err)
-			return
-		}
-		utils.JsonError(w, fmt.Sprintf(utils.ProductUpdateError, id), http.StatusInternalServerError, err)
-		return
-	}
-
-	tagIds, tagErrors := models.CheckAndCreateProductTags(db.DB, newProduct.Tags, id)
-	if len(tagErrors) > 0 {
-		utils.JsonError(w, utils.TagCreationFailed, http.StatusBadRequest, nil)
-		return
-	}
-
-	if errs := models.UpdateTagToProduct(db.DB, tagIds, id); len(errs) > 0 {
-		errStr := utils.ErrorsToString(errs)
-		utils.JsonError(w, fmt.Sprintf(utils.ProductTagUpdateError, id), http.StatusBadRequest, errors.New(errStr))
+	if err := existingP.UpdateProduct(db.DB, id, updatedProduct); err != nil {
+		utils.ErrorResponseFunc(w, fmt.Sprintf(utils.ProductUpdateError, id), http.StatusInternalServerError, err)
 		return
 	}
 
 	productResp, err := existingP.FetchProductResp(db.DB, id)
 	if err != nil {
-		utils.JsonError(w, utils.ProductNotFoundError, http.StatusNotFound, nil)
+		utils.ErrorResponseFunc(w, utils.ProductNotFoundError, http.StatusNotFound, err)
 		return
 	}
 
-	utils.JsonResponse(productResp, w, fmt.Sprintf(utils.ProductUpdatedSuccessfully, id), http.StatusOK)
+	utils.SuccessResponseFunc(w, fmt.Sprintf(utils.ProductUpdatedSuccessfully, id), productResp, http.StatusOK)
 }
 
 func (db *Service) DeleteProduct(w http.ResponseWriter, r *http.Request) {
@@ -233,30 +233,30 @@ func (db *Service) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := utils.GetIDFromPath(r)
-	if err != nil {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+	id := utils.GetIDFromPathString(r)
+	if id == "" || strings.Trim(id, " ") == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
 		return
 	}
 
 	var product models.Product
-	err = product.DeleteProduct(db.DB, id)
+	err := product.DeleteProduct(db.DB, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusBadRequest, err)
+			utils.ErrorResponseFunc(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusBadRequest, err)
 			return
 		}
-		utils.JsonError(w, fmt.Sprintf(utils.ProductDeletionError, id), http.StatusInternalServerError, err)
+		utils.ErrorResponseFunc(w, fmt.Sprintf(utils.ProductDeletionError, id), http.StatusInternalServerError, err)
 		return
 	}
 
-	utils.JsonResponse(nil, w, fmt.Sprintf(utils.ProductDeletedSuccessfully, id), http.StatusOK)
+	utils.SuccessResponseFunc(w, fmt.Sprintf(utils.ProductDeletedSuccessfully, id), nil, http.StatusOK)
 }
 
 func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Request) {
-	productID := getProductID(r.URL.Path)
-	if productID == 0 {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, nil)
+	productID := utils.GetIDFromPathString(r)
+	if productID == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
 		return
 	}
 	log.Println(productID)
@@ -265,13 +265,13 @@ func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Requ
 
 	err := r.ParseMultipartForm(10 << 20) // 10MB max memory
 	if err != nil {
-		utils.JsonError(w, "Unable to parse form", http.StatusBadRequest, err)
+		utils.ErrorResponseFunc(w, "Unable to parse form", http.StatusBadRequest, err)
 		return
 	}
 
 	file, handler, err := r.FormFile("image")
 	if err != nil {
-		utils.JsonError(w, utils.FileRetrieveFailed, http.StatusBadRequest, err)
+		utils.ErrorResponseFunc(w, utils.FileRetrieveFailed, http.StatusBadRequest, err)
 		return
 	}
 	defer file.Close()
@@ -281,10 +281,10 @@ func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Requ
 		os.Mkdir(uploadDir, 0755)
 	}
 
-	filePath := filepath.Join(uploadDir, fmt.Sprintf("%d-%s", productID, handler.Filename))
+	filePath := filepath.Join(uploadDir, fmt.Sprintf("%s-%s", productID, handler.Filename))
 	destFile, err := os.Create(filePath)
 	if err != nil {
-		utils.JsonError(w, utils.UnableToSaveFile, http.StatusInternalServerError, err)
+		utils.ErrorResponseFunc(w, utils.UnableToSaveFile, http.StatusInternalServerError, err)
 		return
 	}
 	log.Println(filePath, *destFile)
@@ -292,44 +292,16 @@ func (db *Service) UploadProductImageHandler(w http.ResponseWriter, r *http.Requ
 
 	_, err = io.Copy(destFile, file)
 	if err != nil {
-		utils.JsonError(w, utils.ErrorSavingFile, http.StatusInternalServerError, err)
+		utils.ErrorResponseFunc(w, utils.ErrorSavingFile, http.StatusInternalServerError, err)
 		return
 	}
 
-}
-
-func getProductID(path string) int {
-	segments := splitPath(path)
-	if len(segments) >= 2 && segments[0] == "products" {
-		id, err := strconv.Atoi(segments[1])
-		if err == nil {
-			return id
-		}
-	}
-	return 0
-}
-
-func splitPath(path string) []string {
-	segments := strings.Split(path, "/")
-	var cleanedSegments []string
-	for _, segment := range segments {
-		if segment != "" {
-			cleanedSegments = append(cleanedSegments, segment)
-		}
-	}
-	return cleanedSegments
 }
 
 func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.Request) {
-	productID := mux.Vars(r)["id"]
-	if productID == "" {
-		utils.JsonError(w, utils.ProductIDRequiredError, http.StatusBadRequest, nil)
-		return
-	}
-
-	productIDInt, err := strconv.Atoi(productID)
-	if err != nil {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+	id := utils.GetIDFromPathString(r)
+	if id == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
 		return
 	}
 
@@ -339,31 +311,32 @@ func (db *Service) UpdateProductQuantityHandler(w http.ResponseWriter, r *http.R
 		Method   string `json:"method"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.JsonError(w, "Invalid request body", http.StatusBadRequest, err)
+		utils.ErrorResponseFunc(w, "Invalid request body", http.StatusBadRequest, err)
 		return
 	}
 
 	// Update product quantity in the database
-	var productResp payloads.ProductResponse
+	var productResp payloads.ProductQtyUpdateResponse
+	var err error
 	if req.Method == ProductAddQuanMethod {
-		productResp, err = AddQuantity(db.DB, productIDInt, req.Quantity)
+		productResp, err = AddQuantity(db.DB, id, req.Quantity)
 	} else if req.Method == ProductSubQuanMethod {
-		productResp, err = SubtractQuantity(db.DB, productIDInt, req.Quantity)
+		productResp, err = SubtractQuantity(db.DB, id, req.Quantity)
 	} else {
-		utils.JsonError(w, "Invalid method", http.StatusBadRequest, nil)
+		utils.ErrorResponseFunc(w, "Invalid method", http.StatusBadRequest, errors.New(utils.InvalidRequestMethod))
 		return
 	}
 
 	if err != nil {
-		utils.JsonErrorWithExtra(w, err.Error(), http.StatusInternalServerError, err, "UpdateProductQuantityHandler")
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusInternalServerError, err)
 		return
 	}
-	utils.JsonResponseWithExtra(productResp, w, utils.ProductQuantityUpdated, http.StatusOK, "UpdateProductQuantityHandler")
+	utils.SuccessResponseFunc(w, utils.ProductQuantityUpdated, productResp, http.StatusOK)
 }
 
-func SubtractQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResponse, error) {
+func SubtractQuantity(db *gorm.DB, productID string, quantity int) (payloads.ProductQtyUpdateResponse, error) {
 	var product models.Product
-	var productResp payloads.ProductResponse
+	var productResp payloads.ProductQtyUpdateResponse
 
 	if err := product.CheckProductExistsById(db, productID); err != nil {
 		return productResp, err
@@ -382,13 +355,14 @@ func SubtractQuantity(db *gorm.DB, productID int, quantity int) (payloads.Produc
 	if err := models.CopyStructIntoStruct(&product, &productResp); err != nil {
 		return productResp, err
 	}
+	log.Println(productResp, product, "from subtractQuantity")
 
 	return productResp, nil
 }
 
-func AddQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResponse, error) {
+func AddQuantity(db *gorm.DB, productID string, quantity int) (payloads.ProductQtyUpdateResponse, error) {
 	var product models.Product
-	var productResp payloads.ProductResponse
+	var productResp payloads.ProductQtyUpdateResponse
 
 	if err := product.CheckProductExistsById(db, productID); err != nil {
 		return productResp, err
@@ -404,31 +378,36 @@ func AddQuantity(db *gorm.DB, productID int, quantity int) (payloads.ProductResp
 		return productResp, err
 	}
 
+	log.Println(productResp, product, "from addQuantity")
 	return productResp, nil
 }
 
-func (db *Service) GetProductByIdForCart(w http.ResponseWriter, r *http.Request) {
-	id, err := utils.GetIDFromPath(r)
-	if err != nil {
-		utils.JsonError(w, utils.InvalidProductIDError, http.StatusBadRequest, err)
+func (db *Service) GetProductByIDForCart(w http.ResponseWriter, r *http.Request) {
+	id := utils.GetIDFromPathString(r)
+	if id == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
 		return
 	}
 
 	var product models.Product
 	productResp, err := product.FetchProductResp(db.DB, id)
 	if err != nil {
-		utils.JsonError(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
+		utils.ErrorResponseFunc(w, fmt.Sprintf(utils.ProductNotFoundError, id), http.StatusNotFound, err)
 		return
 	}
 
 	response := map[string]interface{}{
 		"id":          productResp.ID,
-		"name":        productResp.PName,
-		"description": productResp.PDesc,
+		"name":        productResp.Name,
+		"sku":         productResp.SKU,
+		"short_desc":  productResp.ShortDesc,
+		"description": productResp.Description,
 		"price":       productResp.Price,
 		"quantity":    productResp.Quantity,
+		"in_stock":    productResp.InStock,
 		"discount":    productResp.Discount,
+		"tax_rate":    productResp.Tax,
 	}
 
-	utils.JsonResponse(response, w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), http.StatusOK)
+	utils.SuccessResponseFunc(w, fmt.Sprintf(utils.ProductFetchedSuccessfully, id), response, http.StatusOK)
 }
