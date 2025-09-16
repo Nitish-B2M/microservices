@@ -1,10 +1,13 @@
+// Package models for user-related operations.
 package models
 
 import (
 	"e-commerce-backend/shared/utils"
 	"e-commerce-backend/users/dbs"
+	"e-commerce-backend/users/pkg/constants"
 	"e-commerce-backend/users/pkg/payloads"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -12,27 +15,19 @@ import (
 )
 
 type User struct {
-	ID         int       `json:"id" gorm:"primaryKey;autoIncrement"`
-	FirstName  string    `json:"first_name" gorm:"type:varchar(100);not null"`
-	LastName   string    `json:"last_name" gorm:"type:varchar(100);not null"`
-	Email      string    `json:"email" gorm:"type:varchar(100);not null"`
-	Password   string    `json:"password" gorm:"type:varchar(255);not null"`
-	Gender     string    `json:"gender,omitempty"`
-	IsVerified bool      `json:"is_verified" gorm:"default:false"`
-	IsDeleted  bool      `json:"is_deleted" gorm:"default:false"`
-	IsActive   bool      `json:"is_active" gorm:"default:true"`
-	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-}
-
-type LoginUser struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type UserAuthResponse struct {
-	Token string                `json:"token"`
-	User  payloads.UserResponse `json:"user"`
+	ID         int            `json:"id" gorm:"primaryKey;autoIncrement"`
+	FirstName  string         `json:"first_name" gorm:"type:varchar(100);not null"`
+	LastName   string         `json:"last_name" gorm:"type:varchar(100);not null"`
+	Username   string         `json:"username" gorm:"type:varchar(100);not null"`
+	Email      string         `json:"email" gorm:"type:varchar(100);not null"`
+	Password   string         `json:"password" gorm:"type:varchar(255);not null"`
+	Gender     string         `json:"gender,omitempty" gorm:"type:varchar(20)"` // Consider a custom type for validation
+	IsVerified bool           `json:"is_verified" gorm:"default:false"`
+	IsDeleted  bool           `json:"is_deleted" gorm:"default:false"`
+	IsActive   bool           `json:"is_active" gorm:"default:true"`
+	CreatedAt  time.Time      `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt  time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt  gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"` // Soft delete support
 }
 
 type UserToken struct {
@@ -44,25 +39,19 @@ type UserToken struct {
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-type Role struct {
-	ID     uint   `json:"id"gorm:"primaryKey"`
-	Role   string `json:"role"gorm:"not null"` // Role name (admin, seller, user)
-	UserID int    `json:"user_id"gorm:"not null;index"`
-}
-
 func InitUserSchema() {
 	db := dbs.UserDB
-	if err := db.AutoMigrate(&User{}, &UserToken{}, &Role{}); err != nil {
-		log.Fatalf(utils.DatabaseMigrationError, "User, UserToken and UserRole", err)
+	if err := db.AutoMigrate(&User{}, &UserToken{}); err != nil {
+		log.Fatalf(utils.DatabaseMigrationError, "User, UserToken", err)
 	} else {
-		log.Printf(utils.SchemaMigrationSuccess, "User, UserToken and UserRole")
+		log.Printf(utils.SchemaMigrationSuccess, "User, UserToken")
 	}
 }
 
 type UserService interface {
 	CreateUser(db *gorm.DB) (int, error)
 	GetUserByEmail(db *gorm.DB, email string) (*User, error)
-	GetUserById(db *gorm.DB, id int) (*payloads.UserResponse, error)
+	GetUserByID(db *gorm.DB, id int) (*payloads.UserResponse, error)
 	GetAllUsers(db *gorm.DB) ([]payloads.UserResponse, error)
 	UpdateUser(db *gorm.DB, id int, updatedFields map[string]interface{}) (int, error)
 	DeleteUser(db *gorm.DB, id int) error
@@ -77,10 +66,72 @@ type UserService interface {
 }
 
 func (user *User) CreateUser(db *gorm.DB) (int, error) {
-	if err := db.Create(user).Error; err != nil {
+	tx := db.Begin()
+	if err := tx.Create(user).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+
+	roleName := constants.RoleUser
+	var role Role
+	if err := tx.Where("role = ?", roleName).First(&role).Error; err != nil {
+		tx.Rollback()
+		return 0, fmt.Errorf("role %s does not exist: %w", roleName, err)
+	}
+
+	userRole := NewUserRoleService(user.ID, int(role.ID), user.Username)
+	if err := tx.Create(userRole).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
 		return 0, err
 	}
 	return user.ID, nil
+}
+
+func LoggedInUser(db *gorm.DB, username, password string) (*User, error) {
+
+	fmt.Println(username, password)
+
+	var user User
+	err := db.Table("users").
+		Select("users.*").
+		Where("users.username = ?", username).
+		First(&user).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(user)
+
+	if ok, _ := utils.CompareHashedPassword(user.Password, password); !ok {
+		return nil, errors.New("invalid username or password")
+	}
+
+	return &user, nil
+}
+
+func (user *User) GetUserUsingUsername(db *gorm.DB, username string) (*payloads.UserResponse, error) {
+	var result payloads.ResponseRole
+	err := db.Table("user_roles").
+		Select("user_roles.user_id, roles.role, user_roles.role_id, user_roles.username").
+		Joins("LEFT JOIN roles ON roles.id = user_roles.role_id").
+		Where("user_roles.username = ?", username).
+		First(&result.ActiveRole).Error
+	if err != nil {
+		return nil, fmt.Errorf("error fetching user and role: %w", err)
+	}
+
+	userRes, err := user.GetUserByID(db, result.ActiveRole.UserId)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching user: %w", err)
+	}
+	userRes.Role.ActiveRole = result.ActiveRole
+	return userRes, nil
 }
 
 func (user *User) GetUserByEmail(db *gorm.DB, email string) (*User, error) {
@@ -90,19 +141,28 @@ func (user *User) GetUserByEmail(db *gorm.DB, email string) (*User, error) {
 	if !user.IsActive {
 		return user, errors.New(utils.RequestUserIsDeactivated)
 	}
-	//if ok := user.IsEmailVerified(db, email); !ok {
-	//	return user, fmt.Errorf(utils.UserIsNotVerifiedError)
-	//}
 	return user, nil
 }
 
-func (user *User) GetUserById(db *gorm.DB, id int) (*payloads.UserResponse, error) {
+func (user *User) GetUserByID(db *gorm.DB, id int) (*payloads.UserResponse, error) {
 	if err := db.Where("id =? and is_deleted =?", id, false).First(&user).Error; err != nil {
 		return nil, err
 	}
 
-	userResponse := CopyUserToUserResponse(user)
-	return userResponse, nil
+	var result payloads.ResponseRole
+	err := db.Table("user_roles").
+		Select("user_roles.user_id, roles.role, user_roles.role_id, user_roles.username").
+		Joins("LEFT JOIN roles ON roles.id = user_roles.role_id").
+		Where("user_roles.user_id = ?", id).
+		Find(&result.Roles).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("error fetching user and role: %w", err)
+	}
+
+	userRes := CopyUserToUserResponse(user)
+	userRes.Role = result
+	return userRes, nil
 }
 
 func (user *User) GetAllUsers(db *gorm.DB) ([]payloads.UserResponse, error) {
@@ -207,7 +267,7 @@ func (user *User) CheckUserEmailAlreadyVerified(db *gorm.DB, email string) bool 
 
 func (user *User) VerifyUserEmail(db *gorm.DB, id int) error {
 
-	if _, err := user.GetUserById(db, id); err != nil {
+	if _, err := user.GetUserByID(db, id); err != nil {
 		return errors.New("user not found")
 	}
 
@@ -239,17 +299,16 @@ func CopyUserToUserResponse(user *User) *payloads.UserResponse {
 	}
 }
 
-// ############# Role ############
-func (role *Role) createDefaultUserRole(db *gorm.DB, userId int) (uint, error) {
-	if err := db.Where("role = ?", "user").First(&role).Error; err != nil {
-		role = &Role{
-			Role:   "user",
-			UserID: userId,
-		}
-		if err := db.Create(&role).Error; err != nil {
-			return 0, err
-		}
+func GetUserRoleFromDB(db *gorm.DB, userID uint) (string, error) {
+	var role string
+	err := db.Table("users").
+		Select("roles.role").
+		Joins("LEFT JOIN user_roles ON user_roles.user_id = users.id").
+		Joins("LEFT JOIN roles ON roles.id = user_roles.role_id").
+		Where("users.id = ?", userID).
+		First(&role).Error
+	if err != nil {
+		return "", fmt.Errorf("error fetching user role: %w", err)
 	}
-
-	return role.ID, nil
+	return role, nil
 }

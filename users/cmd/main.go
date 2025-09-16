@@ -1,16 +1,15 @@
 package main
 
 import (
-	"e-commerce-backend/shared/middlewares"
 	"e-commerce-backend/shared/utils"
 	"e-commerce-backend/users/dbs"
 	"e-commerce-backend/users/internal/handlers"
 	"e-commerce-backend/users/internal/models"
-	"fmt"
-	"github.com/joho/godotenv"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/joho/godotenv"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -19,7 +18,6 @@ import (
 func main() {
 	dbs.InitDB()
 	defer dbs.CloseDB()
-	db := dbs.UserDB
 
 	InitSchemas()
 
@@ -33,11 +31,11 @@ func main() {
 		AllowedHeaders: []string{"X-Requested-With", "Content-Type", "Authorization"},
 	})
 
-	r.Handle("/admin", middlewares.AuthMiddleware(middlewares.RoleMiddleware(db, "admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Admin")
-	}))))
-
-	handlers.UserHandler(r)
+	utils.RegisterSubRoutes("/admin", r, handlers.AdminRoutes)
+	utils.RegisterSubRoutes("/user/auth", r, handlers.AuthRoutes)
+	utils.RegisterSubRoutes("/user/role", r, handlers.RoleRoutes)
+	utils.RegisterSubRoutes("/user/profile", r, handlers.ProfileRoutes)
+	utils.RegisterSubRoutes("/user/address", r, handlers.AddressRoutes)
 
 	if err := godotenv.Load("../../.env"); err != nil {
 		log.Fatal(".env file not found from main.go")
@@ -55,4 +53,5 @@ func main() {
 func InitSchemas() {
 	models.InitUserSchema()
 	models.InitAddressSchemas()
+	models.InitUserRoleSchema()
 }

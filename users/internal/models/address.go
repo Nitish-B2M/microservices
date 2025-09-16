@@ -10,8 +10,8 @@ import (
 )
 
 type Address struct {
-	Id               int       `json:"address_id" gorm:"primaryKey;autoIncrement"`
-	UserId           int       `json:"user_id" gorm:"not null"`
+	ID               int       `json:"address_id" gorm:"primaryKey;autoIncrement"`
+	UserID           int       `json:"user_id" gorm:"not null"`
 	FullName         string    `json:"full_name" gorm:"not null;type:varchar(100)"`
 	Street           string    `json:"street" gorm:"not null;type:varchar(100)"`
 	Area             string    `json:"area" gorm:"not null;type:varchar(60)"`
@@ -38,25 +38,25 @@ func InitAddressSchemas() {
 
 type AddressInterface interface {
 	CreateAddress(db *gorm.DB) error
-	UpdateAddress(db *gorm.DB, userId int) error
-	GetAddressByUserId(db *gorm.DB, userId int) ([]Address, error)
-	GetAddressById(db *gorm.DB, ardId int) error
+	UpdateAddress(db *gorm.DB, userID int) error
+	GetAddressByUserId(db *gorm.DB, userID int) ([]Address, error)
+	GetAddressById(db *gorm.DB, ardID int) error
 }
 
-func (adr *Address) GetPrimaryAddress(db *gorm.DB, userId int) error {
-	return db.Where("user_id =? and is_primary =?", userId, true).First(adr).Error
+func (adr *Address) GetPrimaryAddress(db *gorm.DB, userID int) error {
+	return db.Where("user_id =? and is_primary =?", userID, true).First(adr).Error
 }
 
-func (adr *Address) GetAddressByUserId(db *gorm.DB, userId int) ([]Address, error) {
+func (adr *Address) GetAddressByUserID(db *gorm.DB, userID int) ([]Address, error) {
 	var adrs []Address
-	if err := db.Model(adr).Where("user_id =?", userId).Find(&adrs).Error; err != nil {
+	if err := db.Model(adr).Where("user_id =?", userID).Find(&adrs).Error; err != nil {
 		return nil, err
 	}
 	return adrs, nil
 }
 
-func (adr *Address) GetAddressById(db *gorm.DB, adrId int) error {
-	return db.Where("id=?", adrId).First(&adr).Error
+func (adr *Address) GetAddressByID(db *gorm.DB, adrID int) error {
+	return db.Where("id=?", adrID).First(&adr).Error
 }
 
 func (adr *Address) CreateAddress(db *gorm.DB) error {
@@ -66,23 +66,23 @@ func (adr *Address) CreateAddress(db *gorm.DB) error {
 	return nil
 }
 
-func (adr *Address) UpdateAddress(db *gorm.DB, userId int) error {
-	return db.Where("user_id =? and id =?", userId, adr.Id).Save(adr).Error
+func (adr *Address) UpdateAddress(db *gorm.DB, userID int) error {
+	return db.Where("user_id =? and id =?", userID, adr.ID).Save(adr).Error
 }
 
-func (adr *Address) DeleteAddress(db *gorm.DB, adrId, userId int) error {
-	return db.Where("user_id =? and id =?", userId, adrId).Delete(adr).Error
+func (adr *Address) DeleteAddress(db *gorm.DB, adrID, userID int) error {
+	return db.Where("user_id =? and id =?", userID, adrID).Delete(adr).Error
 }
 
-func (adr *Address) SetPrimaryAddress(db *gorm.DB, userId int) error {
-	addresses, _ := adr.GetAddressByUserId(db, userId)
+func (adr *Address) SetPrimaryAddress(db *gorm.DB, userID int) error {
+	addresses, _ := adr.GetAddressByUserID(db, userID)
 	for _, a := range addresses {
-		if a.Id == adr.Id {
+		if a.ID == adr.ID {
 			a.IsPrimary = true
 		} else {
 			a.IsPrimary = false
 		}
-		if err := a.UpdateAddress(db, userId); err != nil {
+		if err := a.UpdateAddress(db, userID); err != nil {
 			return err
 		}
 	}
