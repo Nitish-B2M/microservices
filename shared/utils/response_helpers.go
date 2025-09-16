@@ -2,11 +2,29 @@ package utils
 
 import (
 	"encoding/json"
-	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
+
+type ErrorResponse struct {
+	Status       bool   `json:"status"`
+	Message      string `json:"message"`
+	Data         []any  `json:"data"`
+	ErrorMessage string `json:"error_message"`
+	ErrorCode    string `json:"error_code"`
+}
+
+type SuccessResponse struct {
+	Status       bool    `json:"status"`
+	Message      string  `json:"message"`
+	Data         any     `json:"data"`
+	Total        int     `json:"total"`
+	ErrorMessage *string `json:"error_message"` // nullable
+	ErrorCode    *string `json:"error_code"`    // nullable
+}
 
 func JsonResponse(data interface{}, w http.ResponseWriter, message string, status int) {
 	if status == 0 {
@@ -30,7 +48,37 @@ func JsonResponse(data interface{}, w http.ResponseWriter, message string, statu
 	resp := map[string]interface{}{
 		"message": message,
 		"data":    data,
+		"status":  true,
 	}
+
+	if status != 304 {
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			LogError("error while encoding final response", map[string]interface{}{"error": err})
+			http.Error(cw, FailedToSendResponse, http.StatusInternalServerError)
+		}
+	}
+}
+
+func JSONResponse(w http.ResponseWriter, status int, data interface{}) {
+	if status == 0 {
+		status = http.StatusOK
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	cw := NewCustomResponseWriter(w)
+	cw.WriteHeader(status)
+
+	_, err := json.Marshal(data)
+	if err != nil {
+		LogError("error marshaling data", map[string]interface{}{"error": err})
+		http.Error(cw, InternalServerError, http.StatusInternalServerError)
+		return
+	}
+
+	// res1 := shortResponseData(res)
+	// LogInfo("sending response", map[string]interface{}{"response": res1})
+
+	resp := data
 
 	if status != 304 {
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -66,6 +114,7 @@ func JsonResponseWithExtra(data interface{}, w http.ResponseWriter, message stri
 	resp := map[string]interface{}{
 		"message": message,
 		"data":    data,
+		"status":  true,
 	}
 
 	if status != 304 {
@@ -103,6 +152,7 @@ func JsonResponseWithError(data interface{}, w http.ResponseWriter, message stri
 	}
 
 	resp := map[string]interface{}{
+		"status":  false,
 		"message": message,
 		"data":    data,
 		"error":   errList,
@@ -121,7 +171,7 @@ func JsonError(w http.ResponseWriter, message string, status int, err error) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "message": message})
 }
 
 func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err error, extraInfo interface{}) {
@@ -133,7 +183,7 @@ func JsonErrorWithExtra(w http.ResponseWriter, message string, status int, err e
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{"message": message, "errorDetail": err.Error()})
+	json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error(), "message": message, "extra": extraInfo})
 }
 
 func shortResponseData(message []byte) string {
@@ -150,6 +200,7 @@ func shortResponseData(message []byte) string {
 func GinError(c *gin.Context, message string, status int, err error) {
 	LogError(message, map[string]interface{}{"error": err, "status": status})
 	c.JSON(status, gin.H{
+		"error":   err.Error(),
 		"message": message,
 	})
 }
@@ -157,6 +208,7 @@ func GinError(c *gin.Context, message string, status int, err error) {
 func GinErrorWithExtra(c *gin.Context, message string, status int, err error, filename string) {
 	LogErrorWithFilename(filename, message, map[string]interface{}{"error": err})
 	c.JSON(status, gin.H{
+		"error":       err.Error(),
 		"message":     message,
 		"errorDetail": err.Error(),
 	})
@@ -190,4 +242,30 @@ func ParseJSON(data []byte, v interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func ErrorResponseFunc(w http.ResponseWriter, message string, status int, err error) {
+	errorMsg := "Unknown error"
+	if err != nil {
+		errorMsg = err.Error()
+	}
+
+	errorResponse := ErrorResponse{
+		Status:       false,
+		Message:      message,
+		Data:         []any{},
+		ErrorMessage: errorMsg,
+	}
+
+	JSONResponse(w, status, errorResponse)
+}
+
+func SuccessResponseFunc(w http.ResponseWriter, message string, data any, status int) {
+	successResponse := SuccessResponse{
+		Status:  true,
+		Message: message,
+		Data:    data,
+	}
+
+	JSONResponse(w, status, successResponse)
 }

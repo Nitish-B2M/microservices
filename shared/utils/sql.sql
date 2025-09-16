@@ -1,0 +1,10 @@
+USE `ecomm`;
+SELECT * FROM users;
+SELECT * FROM user_roles;
+SELECT * FROM addresses;
+SELECT * FROM orders;
+SELECT * FROM order_items;
+SELECT * FROM products;
+SELECT * FROM product_entities;
+SELECT * FROM product_tags;
+SELECT * FROM tags;

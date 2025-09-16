@@ -2,18 +2,17 @@ package utils
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/golang-jwt/jwt/v4"
 )
 
 var jwtSecretKey = []byte("your_secret_key")
 
-func GenerateJWT(userID int, email string) (string, error) {
+func GenerateJWT(userID int, email, username string, expireTime int64) (string, error) {
 	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"exp":     time.Now().Add(time.Hour * 24).Unix(),
+		"user_id":  userID,
+		"username": username,
+		"email":    email,
+		"exp":      expireTime,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecretKey)

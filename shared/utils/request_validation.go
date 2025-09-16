@@ -58,9 +58,15 @@ func GetIDFromPath(r *http.Request) (int, error) {
 	return id, err
 }
 
+func GetIDFromPathString(r *http.Request) string {
+	pathVar := mux.Vars(r)
+	id := pathVar["id"]
+	return id
+}
+
 func CheckRequestMethod(w http.ResponseWriter, r *http.Request, expectedMethod string) bool {
 	if r.Method != expectedMethod {
-		JsonError(w, InvalidRequestMethod, http.StatusMethodNotAllowed, nil)
+		JsonError(w, InvalidRequestMethod, http.StatusMethodNotAllowed, errors.New(InvalidRequestMethod))
 		return false
 	}
 	return true
