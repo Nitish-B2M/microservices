@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 type AdrServices struct {
@@ -22,7 +23,7 @@ func NewAdrServices(db *gorm.DB) *AdrServices {
 
 type AddressServices interface {
 	AddAddress(w http.ResponseWriter, r *http.Request)
-	GetAddressByUserId(w http.ResponseWriter, r *http.Request)
+	GetAddressByUserID(w http.ResponseWriter, r *http.Request)
 	UpdateAddress(w http.ResponseWriter, r *http.Request)
 	DeleteAddress(w http.ResponseWriter, r *http.Request)
 	SetPrimaryAddress(w http.ResponseWriter, r *http.Request)
@@ -106,17 +107,17 @@ func validateAddress(address models.Address) []error {
 	return err
 }
 
-func (db *AdrServices) GetAddressByUserId(w http.ResponseWriter, r *http.Request) {
-	userId, ok := r.Context().Value(utils.UserIDKey).(int)
+func (db *AdrServices) GetAddressByUserID(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(utils.UserIDKey).(int)
 	if !ok {
-		utils.JsonError(w, "invalid user", http.StatusBadRequest, nil)
+		utils.JsonError(w, "invalid user", http.StatusBadRequest, fmt.Errorf(utils.InvalidUserIDError, userID))
 		return
 	}
 
 	var adr models.Address
-	addresses, err := adr.GetAddressByUserId(db.DB, userId)
+	addresses, err := adr.GetAddressByUserID(db.DB, userID)
 	if err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
@@ -128,15 +129,15 @@ func (db *AdrServices) GetAddressByUserId(w http.ResponseWriter, r *http.Request
 }
 
 func (db *AdrServices) AddAddress(w http.ResponseWriter, r *http.Request) {
-	userId, ok := r.Context().Value(utils.UserIDKey).(int)
+	userID, ok := r.Context().Value(utils.UserIDKey).(int)
 	if !ok {
-		utils.JsonError(w, "invalid user", http.StatusBadRequest, nil)
+		utils.JsonError(w, "invalid user", http.StatusBadRequest, fmt.Errorf(utils.InvalidUserIDError, userID))
 		return
 	}
 
 	var address models.Address
 	if err := json.NewDecoder(r.Body).Decode(&address); err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, errors.New(err.Error()))
 		return
 	}
 
@@ -155,7 +156,7 @@ func (db *AdrServices) AddAddress(w http.ResponseWriter, r *http.Request) {
 	address = toLowerCaseData(address)
 
 	var temp models.Address
-	existingAdr, err := temp.GetAddressByUserId(db.DB, userId)
+	existingAdr, err := temp.GetAddressByUserID(db.DB, userID)
 	if err != nil {
 		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
@@ -171,7 +172,7 @@ func (db *AdrServices) AddAddress(w http.ResponseWriter, r *http.Request) {
 			}
 			if address.IsPrimary {
 				adr.IsPrimary = false
-				if err := adr.UpdateAddress(db.DB, userId); err != nil {
+				if err := adr.UpdateAddress(db.DB, userID); err != nil {
 					utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 					return
 				}
@@ -179,7 +180,7 @@ func (db *AdrServices) AddAddress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	address.UserId = userId
+	address.UserID = userID
 	if err := address.CreateAddress(db.DB); err != nil {
 		utils.JsonError(w, "address add failed", http.StatusBadRequest, err)
 		return
@@ -190,15 +191,15 @@ func (db *AdrServices) AddAddress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
-	userId, ok := r.Context().Value(utils.UserIDKey).(int)
+	userID, ok := r.Context().Value(utils.UserIDKey).(int)
 	if !ok {
-		utils.JsonError(w, "invalid user", http.StatusBadRequest, nil)
+		utils.JsonError(w, "invalid user", http.StatusBadRequest, fmt.Errorf(utils.InvalidUserIDError, userID))
 		return
 	}
 
-	adrId, err := utils.GetIDFromPath(r)
+	adrID, err := utils.GetIDFromPath(r)
 	if err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
@@ -209,8 +210,8 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var address models.Address
-	if err := address.GetAddressById(db.DB, adrId); err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+	if err := address.GetAddressByID(db.DB, adrID); err != nil {
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
@@ -252,7 +253,7 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 	if partialAddress.AddressType != "" {
 		if partialAddress.AddressType == "other" {
 			if partialAddress.OtherAddressType == "" {
-				utils.JsonError(w, "other address type is required", http.StatusBadRequest, nil)
+				utils.JsonError(w, "other address type is required", http.StatusBadRequest, errors.New("other address type is required"))
 				return
 			}
 			partialAddress.AddressType = strings.ToLower(partialAddress.OtherAddressType)
@@ -263,26 +264,26 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 		address.Phone = partialAddress.Phone
 	}
 
-	if err := address.UpdateAddress(db.DB, userId); err != nil {
+	if err := address.UpdateAddress(db.DB, userID); err != nil {
 		utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 		return
 	}
 
 	if address.IsPrimary != partialAddress.IsPrimary {
 		var temp models.Address
-		addresses, err := temp.GetAddressByUserId(db.DB, userId)
+		addresses, err := temp.GetAddressByUserID(db.DB, userID)
 		if err != nil {
-			utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+			utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 			return
 		}
 		if len(addresses) == 0 {
-			utils.JsonError(w, "address is empty", http.StatusBadRequest, nil)
+			utils.JsonError(w, "address is empty", http.StatusBadRequest, errors.New("address cannot be empty"))
 			return
 		}
 		if len(addresses) == 1 {
 			if partialAddress.IsPrimary {
 				addresses[0].IsPrimary = true
-				if err := addresses[0].UpdateAddress(db.DB, userId); err != nil {
+				if err := addresses[0].UpdateAddress(db.DB, userID); err != nil {
 					utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 					return
 				}
@@ -293,21 +294,21 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 		} else {
 			if partialAddress.IsPrimary {
 				for _, a := range addresses {
-					if a.Id != adrId {
+					if a.ID != adrID {
 						a.IsPrimary = !partialAddress.IsPrimary
 					} else {
 						a.IsPrimary = partialAddress.IsPrimary
 					}
-					if err := a.UpdateAddress(db.DB, userId); err != nil {
+					if err := a.UpdateAddress(db.DB, userID); err != nil {
 						utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 						return
 					}
 				}
 			} else {
 				for _, a := range addresses {
-					if a.Id != adrId {
+					if a.ID != adrID {
 						a.IsPrimary = !partialAddress.IsPrimary
-						if err := a.UpdateAddress(db.DB, userId); err != nil {
+						if err := a.UpdateAddress(db.DB, userID); err != nil {
 							utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 							return
 						}
@@ -315,7 +316,7 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				address.IsPrimary = partialAddress.IsPrimary
-				if err := address.UpdateAddress(db.DB, userId); err != nil {
+				if err := address.UpdateAddress(db.DB, userID); err != nil {
 					utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 					return
 				}
@@ -323,8 +324,8 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := address.GetAddressById(db.DB, adrId); err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+	if err := address.GetAddressByID(db.DB, adrID); err != nil {
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 	address = toTitleCaseData(address)
@@ -333,22 +334,22 @@ func (db *AdrServices) UpdateAddress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *AdrServices) SetPrimaryAddress(w http.ResponseWriter, r *http.Request) {
-	userId := utils.GetUserIdFromContext(r)
+	userID := utils.GetUserIDFromContext(r)
 
-	adrId, err := utils.GetIDFromPath(r)
+	adrID, err := utils.GetIDFromPath(r)
 	if err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
 	var adr models.Address
-	if err := adr.GetAddressById(db.DB, adrId); err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+	if err := adr.GetAddressByID(db.DB, adrID); err != nil {
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
-	if err := adr.SetPrimaryAddress(db.DB, userId); err != nil {
-		utils.JsonError(w, "failed to update address", http.StatusInternalServerError, nil)
+	if err := adr.SetPrimaryAddress(db.DB, userID); err != nil {
+		utils.JsonError(w, "failed to update address", http.StatusInternalServerError, err)
 		return
 	}
 	adr = toTitleCaseData(adr)
@@ -357,40 +358,40 @@ func (db *AdrServices) SetPrimaryAddress(w http.ResponseWriter, r *http.Request)
 }
 
 func (db *AdrServices) DeleteAddress(w http.ResponseWriter, r *http.Request) {
-	userId, ok := r.Context().Value(utils.UserIDKey).(int)
+	userID, ok := r.Context().Value(utils.UserIDKey).(int)
 	if !ok {
-		utils.JsonError(w, "invalid user", http.StatusBadRequest, nil)
+		utils.JsonError(w, "invalid user", http.StatusBadRequest, fmt.Errorf(utils.InvalidUserIDError, userID))
 		return
 	}
 
-	adrId, err := utils.GetIDFromPath(r)
+	adrID, err := utils.GetIDFromPath(r)
 	if err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
 	var adr models.Address
-	if err := adr.GetAddressById(db.DB, adrId); err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+	if err := adr.GetAddressByID(db.DB, adrID); err != nil {
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
 	if adr.IsPrimary {
-		addresses, err := adr.GetAddressByUserId(db.DB, userId)
+		addresses, err := adr.GetAddressByUserID(db.DB, userID)
 		if err != nil {
-			utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+			utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 			return
 		}
 		if len(addresses) == 0 {
-			utils.JsonError(w, "address is empty", http.StatusBadRequest, nil)
+			utils.JsonError(w, "address is empty", http.StatusBadRequest, errors.New("address cannot be empty"))
 			return
 		}
 		if len(addresses) == 1 {
 		} else {
 			for _, a := range addresses {
-				if a.Id != adrId {
+				if a.ID != adrID {
 					a.IsPrimary = true
-					if err := a.UpdateAddress(db.DB, userId); err != nil {
+					if err := a.UpdateAddress(db.DB, userID); err != nil {
 						utils.JsonError(w, "failed to update address", http.StatusBadRequest, err)
 						return
 					}
@@ -400,8 +401,8 @@ func (db *AdrServices) DeleteAddress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := adr.DeleteAddress(db.DB, adrId, userId); err != nil {
-		utils.JsonError(w, err.Error(), http.StatusBadRequest, nil)
+	if err := adr.DeleteAddress(db.DB, adrID, userID); err != nil {
+		utils.JsonError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
