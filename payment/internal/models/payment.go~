@@ -3,6 +3,7 @@ package models
 import (
 	"e-commerce-backend/payment/dbs"
 	"e-commerce-backend/shared/utils"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"log"
 	"time"
