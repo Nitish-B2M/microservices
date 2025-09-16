@@ -14,7 +14,6 @@ const (
 	OrderUpdatedSubject              = "Your Order #%s Has Been Updated"
 	OrderAwaitingPaymentSubject      = "Action Required: Your Order is Awaiting Payment"
 	OrderInvoiceAttachedSubject      = "Your Order #%s Invoice File Attached Below"
-	PasswordResetSubject             = "Reset Password Request"
 )
 
 const TEST_EMAIL_TEMPLATE = `

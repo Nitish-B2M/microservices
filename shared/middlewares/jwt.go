@@ -3,6 +3,7 @@ package middlewares
 import (
 	"context"
 	"e-commerce-backend/shared/utils"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -13,7 +14,7 @@ func JWTMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			utils.JsonError(w, "Authorization header is missing", http.StatusUnauthorized, nil)
+			utils.JsonError(w, "Authorization header is missing", http.StatusUnauthorized, errors.New("authorization header is missing"))
 			return
 		}
 
