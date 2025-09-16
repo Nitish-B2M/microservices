@@ -9,8 +9,13 @@ import (
 
 func OrderHandler(router *gin.RouterGroup) {
 	orderServices := services.NewService(dbs.DB)
-	router.GET("/", middlewares.GinAuthMiddleware(), orderServices.GetOrders)
-	router.POST("/add", middlewares.GinAuthMiddleware(), orderServices.CreateOrder)
-	router.GET("/:order_id", middlewares.GinAuthMiddleware(), orderServices.GetOrderById)
-	router.POST("/checkout", middlewares.GinAuthMiddleware(), orderServices.Checkout)
+	router.GET("/order/", middlewares.GinAuthMiddleware(), orderServices.GetOrders)
+	router.GET("/orders", middlewares.GinAuthMiddleware(), orderServices.GetUserOrders)
+	router.POST("/order/create", middlewares.GinAuthMiddleware(), orderServices.CreateOrder)
+	router.GET("/order/:order_id", middlewares.GinAuthMiddleware(), orderServices.GetOrderById)
+	router.POST("/order/checkout", middlewares.GinAuthMiddleware(), orderServices.Checkout)
+
+	//0.	/orders/checkout
+	//2.	/orders/update_status
+	//	4. /orders/cancel
 }

@@ -37,7 +37,7 @@ func GenerateOrderInvoice(order models.Order, userData map[string]interface{}, i
 	invoice.CompanyDetails.CompanyUrl = "https://nitish-b2m.github.io/myportfolio.github.io/"
 
 	//invoice basic
-	invoice.InvoiceId = strconv.Itoa(order.OrderID)
+	invoice.InvoiceId = order.OrderID.String()
 	invoice.Title = "Invoice"
 	invoice.Date = time.Now().Format("2006-01-02 15:04:05")
 	invoice.TaxAmount = strconv.FormatFloat(taxAmount, 'f', -1, 64)

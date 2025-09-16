@@ -7,6 +7,7 @@ const (
 	ProductMicroserviceCallById = "/%d/cart"
 	PaymentMicroserviceCallById = "/initiate"
 	UserMicroserviceCallById    = "/%d"
+	UpdateProductQuantityMSCall = "/%d/update-quantity"
 )
 
 func MicroserviceLinks() map[string]string {
@@ -14,6 +15,8 @@ func MicroserviceLinks() map[string]string {
 
 	productCallByIdLink := utils.GetProductMicroserviceLink(ProductMicroserviceCallById)
 	links["productMSCallByIdLink"] = productCallByIdLink
+	updateProductQuantityLink := utils.GetProductMicroserviceLink(UpdateProductQuantityMSCall)
+	links["updateProductQuantityMSCallLink"] = updateProductQuantityLink
 
 	cartCallByIdLink := utils.GetCartMicroserviceLink(CartMicroserviceCallById)
 	links["cartMSCallByIdLink"] = cartCallByIdLink
