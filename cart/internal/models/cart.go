@@ -15,7 +15,7 @@ import (
 type Cart struct {
 	Id          int       `json:"id" gorm:"autoIncrement"`
 	UserId      int       `json:"user_id"`
-	ProductId   int       `json:"product_id"`
+	ProductId   string    `json:"product_id"`
 	Quantity    int       `json:"quantity" default:"1"`
 	IsProcessed bool      `json:"is_processed" default:"false"`
 	CreatedAt   time.Time `json:"-" gorm:"type:datetime;default:CURRENT_TIMESTAMP"`

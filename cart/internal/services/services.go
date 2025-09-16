@@ -1,3 +1,4 @@
+// Package services for cart-related operations.
 package services
 
 import (
@@ -45,12 +46,12 @@ type CartInterface interface {
 	RemoveFromCart(w http.ResponseWriter, r *http.Request)
 	Checkout(w http.ResponseWriter, r *http.Request)
 	ValidateCart(cartItems []models.Cart) error
-	CheckProductStock(productId int, quantity int) (bool, error)
+	CheckProductStock(productID int, quantity int) (bool, error)
 	GetCartByCartId(w http.ResponseWriter, r *http.Request)
 	ClearCart(w http.ResponseWriter, r *http.Request)
 }
 
-func verifyUserUsingIdAndCtxId(r *http.Request) (int, bool) {
+func verifyUserUsingIDAndCtxID(r *http.Request) (int, bool) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 	userID, _ := strconv.Atoi(id)
@@ -61,36 +62,36 @@ func verifyUserUsingIdAndCtxId(r *http.Request) (int, bool) {
 	return userID, true
 }
 
-func getCartIdFromParams(r *http.Request) (int, bool) {
+func getCartIDFromParams(r *http.Request) (int, bool) {
 	vars := mux.Vars(r)
 	id := vars["cart_id"]
-	cartId, _ := strconv.Atoi(id)
-	return cartId, true
+	cartID, _ := strconv.Atoi(id)
+	return cartID, true
 }
 
-func fetchProductUsingMicroservices(productId int) (map[string]interface{}, error) {
-	productServiceURL := fmt.Sprintf(constants.ProductMicroserviceGetProductCall, productId)
+func fetchProductUsingMicroservices(productID string) (map[string]interface{}, error) {
+	productServiceURL := fmt.Sprintf(constants.ProductMicroserviceGetProductCall, productID)
 	resp, err := http.Get(productServiceURL)
 	if err != nil {
-		utils.LogError(fmt.Sprintf(constants.FailedToFetchProductDetails, productId), map[string]interface{}{"error": err.Error()})
+		utils.LogError(fmt.Sprintf(constants.FailedToFetchProductDetails, productID), map[string]interface{}{"error": err.Error()})
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		utils.LogError(fmt.Sprintf(constants.ProductNotFound, productId), map[string]interface{}{})
+		utils.LogError(fmt.Sprintf(constants.ProductNotFound, productID), map[string]interface{}{})
 		return nil, err
 	}
 
 	// Decode the product details
 	var product map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&product); err != nil {
-		utils.LogError(fmt.Sprintf(constants.ErrorDecodingProductDetails, productId), map[string]interface{}{"error": err.Error()})
+		utils.LogError(fmt.Sprintf(constants.ErrorDecodingProductDetails, productID), map[string]interface{}{"error": err.Error()})
 		return nil, err
 	}
 
 	if product == nil {
-		utils.LogError(fmt.Sprintf(constants.ProductNotFound, productId), map[string]interface{}{"error": err.Error()})
+		utils.LogError(fmt.Sprintf(constants.ProductNotFound, productID), map[string]interface{}{"error": err.Error()})
 		return nil, err
 	}
 
@@ -104,7 +105,7 @@ func fetchProductUsingMicroservices(productId int) (map[string]interface{}, erro
 }
 
 func (db *Service) GetCartItemByUserID(w http.ResponseWriter, r *http.Request) {
-	userId := utils.GetUserIdFromContext(r)
+	userId := utils.GetUserIDFromContext(r)
 
 	var cart models.Cart
 	cartItems, err := cart.GetCartByUserId(db.DB, userId)
@@ -121,7 +122,7 @@ func (db *Service) GetCartItemByUserID(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-
+		log.Println(product)
 		price := product["price"].(float64) * float64(cartItem.Quantity)
 		cartRespItem := payloads.CartItemResponse{
 			Id:       cartItem.Id,
@@ -139,10 +140,10 @@ func (db *Service) GetCartItemByUserID(w http.ResponseWriter, r *http.Request) {
 func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 	token := utils.GetTokenFromRequestHeader(r)
 	if token == "" {
-		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, nil)
+		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, errors.New(utils.MissingAuthorizationHeader))
 		return
 	}
-	userId := utils.GetUserIdFromContext(r)
+	userId := utils.GetUserIDFromContext(r)
 
 	var req payloads.CartRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -170,9 +171,14 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if product["in_stock"].(bool) == false {
+			utils.JsonError(w, fmt.Sprintf(utils.ProductOutOfStockError, item.ProductID), http.StatusBadRequest, errors.New(fmt.Sprintf(utils.ProductOutOfStockError, item.ProductID)))
+			return
+		}
+
 		if int(product["quantity"].(float64)) < item.Quantity {
-			utils.JsonError(w, constants.ProductQuantityOutOfStock, http.StatusBadRequest, err)
-			continue
+			utils.JsonError(w, constants.ProductQuantityOutOfStock, http.StatusBadRequest, errors.New(constants.ProductQuantityOutOfStock))
+			return
 		}
 
 		//insert into cart table logic int 4
@@ -200,6 +206,7 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 
 		cartResp.Items = append(cartResp.Items, cartRespItem)
 	}
+	log.Println("cartResp", cartResp)
 
 	if len(errorMsg) > 0 {
 		if len(req.Items)-len(errorMsg) > 0 {
@@ -216,7 +223,7 @@ func (db *Service) AddToCart(w http.ResponseWriter, r *http.Request) {
 func (db *Service) UpdateCartQty(w http.ResponseWriter, r *http.Request) {
 	token := utils.GetTokenFromRequestHeader(r)
 	if token == "" {
-		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, nil)
+		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, errors.New(utils.MissingAuthorizationHeader))
 		return
 	}
 	//avoiding race condition
@@ -285,7 +292,7 @@ func (db *Service) UpdateCartQty(w http.ResponseWriter, r *http.Request) {
 func (db *Service) DeleteCartByCartId(w http.ResponseWriter, r *http.Request) {
 	token := utils.GetTokenFromRequestHeader(r)
 	if token == "" {
-		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, nil)
+		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, errors.New(utils.MissingTokenError))
 		return
 	}
 
@@ -331,7 +338,7 @@ func (db *Service) Checkout(w http.ResponseWriter, r *http.Request) {
 	//	utils.JsonError(w, utils.UnauthorizedError, http.StatusUnauthorized, fmt.Errorf(utils.UserNotFoundError, userId))
 	//	return
 	//}
-	userId := utils.GetUserIdFromContext(r)
+	userId := utils.GetUserIDFromContext(r)
 
 	var cart models.Cart
 	carts, err := cart.GetCartByUserId(db.DB, userId)
@@ -370,7 +377,7 @@ func (db *Service) ValidateCart(cartItems []models.Cart) error {
 }
 
 // CheckProductStock makes an HTTP request to the Product Microservice to validate stock levels
-func (db *Service) CheckProductStock(productId int, quantity int) (bool, error) {
+func (db *Service) CheckProductStock(productId string, quantity int) (bool, error) {
 	// Define the URL of the Product Microservice (for example)
 	url := fmt.Sprintf(constants.ProductMicroserviceGetProductCall, productId)
 	resp, err := http.Get(url)
@@ -403,9 +410,9 @@ func (db *Service) GetCartByCartId(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token = strings.TrimPrefix(token, "Bearer ")
-	userId := utils.GetUserIdFromContext(r)
+	userId := utils.GetUserIDFromContext(r)
 
-	cartId, ok := getCartIdFromParams(r)
+	cartId, ok := getCartIDFromParams(r)
 	if !ok {
 		utils.JsonError(w, utils.CartIdNotProvided, http.StatusBadRequest, nil)
 		return
@@ -428,7 +435,7 @@ func (db *Service) ClearCart(w http.ResponseWriter, r *http.Request) {
 		utils.JsonError(w, utils.MissingAuthorizationHeader, http.StatusUnauthorized, nil)
 		return
 	}
-	userId := utils.GetUserIdFromContext(r)
+	userId := utils.GetUserIDFromContext(r)
 	if userId == 0 {
 		utils.JsonError(w, utils.UserIdNotFoundInCtx, http.StatusBadRequest, nil)
 		return

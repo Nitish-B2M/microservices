@@ -3,7 +3,7 @@ package constants
 import "e-commerce-backend/shared/utils"
 
 const (
-	UpdateProductQuantityMSCall = "/%d/update-quantity"
+	UpdateProductQuantityMSCall = "/%s/update-quantity"
 )
 
 func MicroserviceLinks() map[string]string {
