@@ -1,138 +1,699 @@
 package models
 
 import (
-	"e-commerce-backend/products/dbs"
 	"e-commerce-backend/products/pkg/payloads"
 	"e-commerce-backend/shared/utils"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"log"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
-	"time"
+	"sync"
 
+	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
-type Product struct {
-	ID         int       `json:"id"`
-	SellerID   uuid.UUID `json:"seller_id" gorm:"not null"`
-	PName      string    `json:"name" gorm:"unique;not null;column:name"`
-	PDesc      string    `json:"description" gorm:"column:description"`
-	Price      float64   `json:"price" gorm:"not null"`
-	Quantity   int       `json:"quantity" gorm:"not null"`
-	IsDeleted  bool      `json:"is_deleted" gorm:"default:false"`
-	InStock    bool      `json:"in_stock" gorm:"default:true"`
-	Discount   float64   `json:"discount" gorm:"default:0"`
-	Category   string    `json:"category" gorm:"not null"`
-	IsFeatured bool      `json:"is_featured" gorm:"default:false"`
-	TaxRate    float64   `json:"tax_rate" gorm:"default:0"`
-	CreatedAt  time.Time `json:"created_at" gorm:"type:datetime;default:CURRENT_TIMESTAMP"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"type:datetime;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
-	Rating     float64   `json:"rating" gorm:"default:0"`
-}
-
-type ProductTag struct {
-	ProductID int `json:"product_id"`
-	TagID     int `json:"tag_id"`
-}
-
-func InitProductSchema() {
-	db := dbs.DB
-	if err := db.AutoMigrate(&Product{}, &ProductTag{}); err != nil {
-		log.Fatalf(utils.DatabaseMigrationError, "Product/ProductTag", err)
-	} else {
-		log.Printf(utils.SchemaMigrationSuccess, "Product/ProductTag")
-	}
-}
-
-func (p *Product) CheckProductExistsById(db *gorm.DB, id int) error {
-	return db.Where("id = ? AND is_deleted = ?", id, false).First(&p).Error
-}
-
-func GetProducts() ([]payloads.ProductResponse, []error) {
-	var products []Product
-	var resProducts []payloads.ProductResponse
-	var errs []error
-	db := dbs.DB
-	if err := db.Where("is_deleted =?", false).Find(&products).Error; err != nil {
-		return nil, []error{fmt.Errorf(utils.DatabaseConnectionError)}
+func InitNewProductSchema(db *gorm.DB) {
+	if db == nil {
+		log.Fatal("Database connection is nil")
+		return
 	}
 
-	if len(products) == 0 {
-		return nil, []error{errors.New("no products found")}
+	// Drop existing tables in reverse order to avoid foreign key constraints
+	//tables := []interface{}{
+	//	&ProductAttribute{},
+	//	&ProductImage{},
+	//	&ProductVariant{},
+	//	&Entities{},
+	//	&ProductEntity{},
+	//	//&Product{},
+	//}
+	//
+	////log.Println("tables", tables)
+	////// Drop tables safely
+	//for _, table := range tables {
+	//	if db.Migrator().HasTable(table) {
+	//		if err := db.Migrator().DropTable(table); err != nil {
+	//			log.Printf("Error dropping table %v: %v", table, err)
+	//			// Continue even if drop fails
+	//		}
+	//	}
+	//}
+
+	//log.Printf(utils.SchemaMigrationSuccess, "Dropped existing product-related tables")
+
+	// Create tables in correct order
+	migrations := []interface{}{
+		&Entities{},
+		&Product{},
+		&ProductImage{},
+		&ProductVariant{},
+		&ProductAttribute{},
+		&ProductEntity{},
 	}
 
-	for _, product := range products {
-		var resProduct payloads.ProductResponse
-		if product.Quantity <= 0 {
-			product.InStock = false
-			product.UpdateProduct(db, product.ID, map[string]interface{}{"in_stock": false})
+	// Perform migrations
+	for _, model := range migrations {
+		if err := db.AutoMigrate(model); err != nil {
+			log.Printf("Error migrating %T: %v", model, err)
+			return
 		}
-		if err := CopyStructIntoStruct(&product, &resProduct); err != nil {
-			utils.SimpleLog("error", err.Error())
-			return nil, []error{err}
-		}
-		resProducts = append(resProducts, resProduct)
+		log.Printf("Successfully migrated %T", model)
 	}
 
-	for i, product := range resProducts {
-		tags, err := FetchProductTagsName(db, product.ID)
-		if err != nil {
-			errs = append(errs, err...)
-		}
-
-		if tags == nil {
-			resProducts[i].Tags = []string{}
-		} else {
-			resProducts[i].Tags = tags
-		}
-	}
-
-	if len(errs) > 0 {
-		utils.SimpleLog("error", utils.TagFetchError, errs)
-		return nil, errs
-	}
-
-	utils.SimpleLog("info", utils.ProductsFetchedSuccessfully, len(resProducts))
-	return resProducts, nil
+	log.Printf(utils.SchemaMigrationSuccess, "All product-related tables")
 }
 
-func (p *Product) FetchProductResp(db *gorm.DB, id int) (*payloads.ProductResponse, error) {
-	var productResp payloads.ProductResponse
-	if err := p.CheckProductExistsById(db, id); err != nil {
-		return nil, err
+func NewVariant() *ProductVariant {
+	return &ProductVariant{
+		ID:       "",
+		PID:      "",
+		Name:     "",
+		SKU:      "",
+		Price:    0,
+		Quantity: 0,
+		Options:  datatypes.JSON([]byte("{}")),
 	}
-
-	if productResp.Quantity <= 0 {
-		productResp.InStock = false
-		p.UpdateProduct(db, productResp.ID, map[string]interface{}{"in_stock": false})
-	}
-
-	if err := CopyStructIntoStruct(p, &productResp); err != nil {
-		return nil, err
-	}
-	return &productResp, nil
 }
 
-func (p *Product) AddProduct(db *gorm.DB) (int, error) {
-	p.ID = utils.GenerateRandomID()
-	if err := db.Create(&p).Error; err != nil {
-		return 0, err
-	}
-	return p.ID, nil
+var productMutex sync.Mutex
+
+type ProductInterface interface {
+	CheckProductExistsById(db *gorm.DB, id string) error
+	FetchProductResp(db *gorm.DB, id string) (*payloads.ProductResponse, error)
+	AddProduct(db *gorm.DB) (*Product, error)
+	UpdateProduct(db *gorm.DB, id string, changedFieldValue payloads.ProductRequest) error
+	DeleteProduct(db *gorm.DB, id string) error
+	UpdateProductQuantity(db *gorm.DB) error
+	GetProductById(db *gorm.DB, id string) (*Product, error)
 }
 
-func (p *Product) UpdateProduct(db *gorm.DB, id int, updatedFields map[string]interface{}) error {
-	if err := db.Model(&p).Where("id = ?", id).Updates(updatedFields).Error; err != nil {
+func CreateImageURL(url string) string {
+	if !strings.HasPrefix(url, "http") {
+		return "http://localhost:8081/" + url
+	}
+	return url
+}
+
+func RemoveImageURLDomain(url string) string {
+	if strings.HasPrefix(url, "http") {
+		if strings.HasPrefix(url, "http://localhost:8081") {
+			return strings.TrimPrefix(url, "http://localhost:8081/")
+		}
+		return strings.TrimPrefix(url, "http://")
+	}
+	return url
+}
+
+func (product *Product) CheckProductExistsById(db *gorm.DB, id string) error {
+	if err := db.
+		Preload("Category.Entity").
+		Preload("Brand.Entity").
+		Preload("Tags.Entity").
+		Preload("Images").
+		Preload("Variants").
+		Preload("Attributes").
+		Where("is_deleted = ?", false).
+		First(&product, "id = ?", id).Error; err != nil {
 		return err
+	}
+
+	if len(product.Images) > 0 {
+		for i := range product.Images {
+			product.Images[i].URL = CreateImageURL(product.Images[i].URL)
+		}
 	}
 	return nil
 }
 
-func (p *Product) DeleteProduct(db *gorm.DB, id int) error {
-	if err := p.CheckProductExistsById(db, id); err != nil {
+func GetProducts(db *gorm.DB) ([]payloads.ProductResponse, error) {
+	var products []Product
+	if err := db.
+		Preload("Category.Entity").
+		Preload("Brand.Entity").
+		Preload("Tags.Entity").Preload("Images").Preload("Variants").Preload("Attributes").Where("is_deleted = ?", false).Find(&products).Error; err != nil {
+		return nil, err
+	}
+
+	var response []payloads.ProductResponse
+	for _, product := range products {
+		if len(product.Images) > 0 {
+			for i := range product.Images {
+				product.Images[i].URL = CreateImageURL(product.Images[i].URL)
+			}
+		}
+		res := CopyProductToProductResponse(product)
+		response = append(response, res)
+	}
+	return response, nil
+}
+
+func GetProductsForSeller(db *gorm.DB) ([]Product, error) {
+	var products []Product
+	if err := db.
+		Preload("Category.Entity").
+		Preload("Brand.Entity").
+		Preload("Tags.Entity").Preload("Images").Preload("Variants").Preload("Attributes").Where("is_deleted = ?", false).Find(&products).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range products {
+		if len(products[i].Images) > 0 {
+			for j := range products[i].Images {
+				products[i].Images[j].URL = CreateImageURL(products[i].Images[j].URL)
+			}
+		}
+	}
+	return products, nil
+}
+
+func CheckProductExistsBySKU(db *gorm.DB, sku string, table string) error {
+	if table == "" {
+		table = "products"
+	}
+	if table == "products" {
+		return db.Where("sku = ?", sku).First(&Product{}).Error
+	} else if table == "product_variants" {
+		return db.Table("product_variants").Where("sku = ?", sku).First(&ProductVariant{}).Error
+	}
+	return nil
+}
+
+func (product *Product) FetchProductResp(db *gorm.DB, id string) (*payloads.ProductResponse, error) {
+	if err := product.CheckProductExistsById(db, id); err != nil {
+		return nil, err
+	}
+	// avoiding race condition
+	productMutex.Lock()
+	defer productMutex.Unlock()
+
+	//if product.Quantity <= 0 {
+	//	productResp.InStock = false
+	//	//product.UpdateProduct(db, productResp.ID, map[string]interface{}{"in_stock": false})
+	//}
+
+	productResp := CopyProductToProductResponse(*product)
+	return &productResp, nil
+}
+
+func (product *Product) AddProduct(db *gorm.DB, category, brand string, tags []string) (*payloads.ProductResponse, error) {
+	//avoiding race condition
+	productMutex.Lock()
+	defer productMutex.Unlock()
+
+	//First check if product exists by SKU
+	if err := CheckProductExistsBySKU(db, product.SKU, "products"); err == nil {
+		return nil, fmt.Errorf("product with SKU %s already exists", product.SKU)
+	}
+
+	// Start transaction
+	tx := db.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	//Handle product variants
+	if len(product.Variants) > 0 {
+		for _, variant := range product.Variants {
+			if err := CheckProductExistsBySKU(tx, variant.SKU, "product_variants"); err == nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("product variant with SKU %s already exists", variant.SKU)
+			}
+		}
+	}
+
+	// Create the product
+	if err := tx.Create(&product).Error; err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("error creating product: %v", err)
+	}
+
+	// Create product variants
+	if len(product.Variants) > 0 {
+		for i := range product.Variants {
+			product.Variants[i].PID = product.ID
+			if err := tx.Create(&product.Variants[i]).Error; err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("error creating product variants: %v", err)
+			}
+		}
+	}
+
+	// Create product images
+	if len(product.Images) > 0 {
+		for i := range product.Images {
+			product.Images[i].PID = product.ID
+			if err := tx.Create(&product.Images[i]).Error; err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("error creating product images: %v", err)
+			}
+		}
+	}
+
+	// Create product attributes
+	if len(product.Attributes) > 0 {
+		for i := range product.Attributes {
+			product.Attributes[i].PID = product.ID
+			if err := tx.Create(&product.Attributes[i]).Error; err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("error creating product attributes: %v", err)
+			}
+		}
+	}
+
+	// Handle tags, categories, and brands within the same transaction
+	// Tags
+	if len(tags) > 0 {
+		entityLabelResp, err := CheckAndCreateTags(tx, tags, product.ID)
+		if err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("error creating tags: %v", err)
+		}
+		product.Tags = entityLabelResp
+	}
+
+	// category
+	if len(category) > 0 {
+		entityProductCategoryResp, err := CheckAndCreateCategoryOrBrand(tx, category, "category", product.ID)
+		if err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("error creating category: %v", err)
+		}
+		product.Category = *entityProductCategoryResp
+	}
+
+	// brand
+	if len(brand) > 0 {
+		entityProductBrandResp, err := CheckAndCreateCategoryOrBrand(tx, brand, "brand", product.ID)
+		if err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("error creating brand: %v", err)
+		}
+		product.Brand = *entityProductBrandResp
+	}
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	// Fetch the complete product with all associations
+	if err := db.Preload("Tags.Entity").Preload("Category.Entity").Preload("Brand.Entity").Preload("Images").Preload("Variants").Preload("Attributes").First(&product, "id = ?", product.ID).Error; err != nil {
+		return nil, err
+	}
+
+	createdProduct := CopyProductToProductResponse(*product)
+
+	return &createdProduct, nil
+}
+
+func processImages(existingImages []ProductImage, updatedImages []payloads.ProductImageRequest, productID string) (imageToBeDeleted, imageToBeAdded []ProductImage, err error) {
+	log.Println("processing images", existingImages, updatedImages)
+	if len(existingImages) > 0 {
+		if len(updatedImages) > 0 {
+			newImageMap := make(map[string]ProductImage)
+			for _, image := range existingImages {
+				newImageMap[image.ID] = image
+			}
+
+			for i := range updatedImages {
+				if _, ok := newImageMap[updatedImages[i].ID]; ok {
+					delete(newImageMap, updatedImages[i].ID)
+					continue
+				}
+				if updatedImages[i].ID == "" {
+					updatedImages[i].ID = uuid.New().String()
+				}
+				updatedImages[i].PID = productID
+				if updatedImages[i].URL == "" {
+					filePath, uploadErr := UploadBase64Image(updatedImages[i].Image, updatedImages[i].PID, updatedImages[i].ID)
+					if uploadErr != nil {
+						return nil, nil, fmt.Errorf("failed to upload base64 image: %v", uploadErr)
+					}
+					updatedImages[i].URL = filePath
+				}
+				imageToBeAdded = append(imageToBeAdded, CopyProductImgReqToProductImg(updatedImages[i]))
+			}
+
+			for _, image := range newImageMap {
+				imageToBeDeleted = append(imageToBeDeleted, image)
+			}
+		} else {
+			imageToBeDeleted = existingImages
+		}
+	} else {
+		for i := range updatedImages {
+			if updatedImages[i].ID == "" {
+				updatedImages[i].ID = uuid.New().String()
+			}
+			updatedImages[i].PID = productID
+			if updatedImages[i].URL == "" {
+				filePath, uploadErr := UploadBase64Image(updatedImages[i].Image, updatedImages[i].PID, updatedImages[i].ID)
+				if uploadErr != nil {
+					return nil, nil, fmt.Errorf("failed to upload base64 image: %v", uploadErr)
+				}
+				updatedImages[i].URL = filePath
+			}
+			imageToBeAdded = append(imageToBeAdded, CopyProductImgReqToProductImg(updatedImages[i]))
+		}
+	}
+
+	return imageToBeDeleted, imageToBeAdded, nil
+}
+
+func UpdateProductImages(db *gorm.DB, pid string, changedFieldValue []payloads.ProductImageRequest) error {
+	var existingImages []ProductImage
+	if err := db.Where("p_id = ?", pid).Find(&existingImages).Error; err != nil {
+		return fmt.Errorf("failed to fetch existing images: %v", err)
+	}
+	imageToBeDeleted, imageToBeAdded, err := processImages(existingImages, changedFieldValue, pid)
+	if err != nil {
+		return err
+	}
+	log.Println(imageToBeDeleted, imageToBeAdded)
+	if len(imageToBeDeleted) > 0 {
+		if err := db.Delete(&imageToBeDeleted).Error; err != nil {
+			return fmt.Errorf("failed to delete images: %v", err)
+		}
+	}
+	if len(imageToBeAdded) > 0 {
+		if err := db.Create(&imageToBeAdded).Error; err != nil {
+			return fmt.Errorf("failed to create images: %v", err)
+		}
+	}
+	return nil
+}
+
+func UpdateProductVariants(db *gorm.DB, pid string, changedFieldValue []payloads.ProductVariantRequest) error {
+	var existingVariants []ProductVariant
+	if err := db.Where("p_id = ?", pid).Find(&existingVariants).Error; err != nil {
+		return fmt.Errorf("failed to fetch existing variants: %v", err)
+	}
+	// Create a map for existing variants by ID for quick lookups
+	existingVariantMap := make(map[string]ProductVariant)
+	for _, existingVariant := range existingVariants {
+		existingVariantMap[existingVariant.ID] = existingVariant
+	}
+
+	// Create a map for new variants by ID for quick lookups
+	newVariantMap := make(map[string]payloads.ProductVariantRequest)
+	for _, newVariant := range changedFieldValue {
+		newVariantMap[newVariant.ID] = newVariant
+	}
+
+	// Variables to accumulate changes
+	var variantsToCreate []ProductVariant
+	var variantsToUpdate []ProductVariant
+	var variantsToDelete []ProductVariant
+
+	// Step 1: Identify updates and deletions
+	for _, existingVariant := range existingVariants {
+		if newVariant, exists := newVariantMap[existingVariant.ID]; exists {
+			// Check if the existing variant has any updates
+			isUpdated := false
+
+			// Update Name if changed
+			if existingVariant.Name != newVariant.Name {
+				existingVariant.Name = newVariant.Name
+				isUpdated = true
+			}
+
+			// Update Price if changed
+			if existingVariant.Price != newVariant.Price {
+				existingVariant.Price = newVariant.Price
+				isUpdated = true
+			}
+
+			// Update Quantity if changed
+			if existingVariant.Quantity != newVariant.Quantity {
+				existingVariant.Quantity = newVariant.Quantity
+				isUpdated = true
+			}
+
+			// Update SKU if changed
+			if existingVariant.SKU != newVariant.SKU {
+				existingVariant.SKU = newVariant.SKU
+				isUpdated = true
+			}
+
+			// Update Options if changed
+			if newVariant.Options != nil {
+				existingVariant.Options = datatypes.JSON([]byte(newVariant.Options))
+				isUpdated = true
+			} else if existingVariant.Options == nil {
+				existingVariant.Options = datatypes.JSON([]byte("[]"))
+				isUpdated = true
+			}
+
+			// If there was any update, add it to the update list
+			if isUpdated {
+				variantsToUpdate = append(variantsToUpdate, existingVariant)
+			}
+		} else {
+			// If the variant is not in the new data, add it to delete list
+			variantsToDelete = append(variantsToDelete, existingVariant)
+		}
+	}
+
+	// Step 2: Identify new variants
+	for _, newVariant := range changedFieldValue {
+		if _, exists := existingVariantMap[newVariant.ID]; !exists {
+			// Variant does not exist, add to create list
+			newVariant.ID = uuid.New().String()
+			newVariant.PID = pid
+
+			// Handle options
+			if newVariant.Options == nil {
+				newVariant.Options = datatypes.JSON([]byte("[]")) // Empty array if no options provided
+			} else {
+				newVariant.Options = datatypes.JSON([]byte(newVariant.Options))
+			}
+
+			variant := ProductVariant{
+				ID:       newVariant.ID,
+				PID:      newVariant.PID,
+				Name:     newVariant.Name,
+				Price:    newVariant.Price,
+				Quantity: newVariant.Quantity,
+				SKU:      newVariant.SKU,
+				Options:  newVariant.Options,
+			}
+			variantsToCreate = append(variantsToCreate, variant)
+		}
+	}
+
+	// Step 3: Perform database operations in batch
+	// Create new variants
+	if len(variantsToCreate) > 0 {
+		if err := db.Create(&variantsToCreate).Error; err != nil {
+			return fmt.Errorf("failed to create new variants: %v", err)
+		}
+		log.Println("Created new variants:", variantsToCreate)
+	}
+
+	// Update existing variants
+	if len(variantsToUpdate) > 0 {
+		if err := db.Save(&variantsToUpdate).Error; err != nil {
+			return fmt.Errorf("failed to update variants: %v", err)
+		}
+		log.Println("Updated existing variants:", variantsToUpdate)
+	}
+
+	// Delete removed variants
+	if len(variantsToDelete) > 0 {
+		if err := db.Delete(&variantsToDelete).Error; err != nil {
+			return fmt.Errorf("failed to delete variants: %v", err)
+		}
+		log.Println("Deleted variants:", variantsToDelete)
+	}
+
+	return nil
+}
+
+func UpdateProductAttributes(db *gorm.DB, pid string, changedFieldValue []payloads.ProductAttributeRequest) error {
+	var existingAttributes []ProductAttribute
+	if err := db.Where("p_id = ?", pid).Find(&existingAttributes).Error; err != nil {
+		return fmt.Errorf("failed to fetch existing attributes: %v", err)
+	}
+
+	// Step 2: Create maps for quick lookups
+	existingAttributeMap := make(map[string]ProductAttribute)
+	for _, existingAttribute := range existingAttributes {
+		existingAttributeMap[existingAttribute.ID] = existingAttribute
+	}
+
+	newAttributeMap := make(map[string]payloads.ProductAttributeRequest)
+	for _, newAttribute := range changedFieldValue {
+		newAttributeMap[newAttribute.ID] = newAttribute
+	}
+
+	// Step 3: Variables to accumulate changes
+	var attributesToCreate []ProductAttribute
+	var attributesToUpdate []ProductAttribute
+	var attributesToDelete []ProductAttribute
+
+	// Step 4: Identify updates and deletions
+	for _, existingAttribute := range existingAttributes {
+		if newAttribute, exists := newAttributeMap[existingAttribute.ID]; exists {
+			// Attribute exists, check if it needs to be updated
+			isUpdated := false
+
+			// Update Name if changed
+			if existingAttribute.Name != newAttribute.Name {
+				existingAttribute.Name = newAttribute.Name
+				isUpdated = true
+			}
+
+			// Update Value if changed
+			if existingAttribute.Value != newAttribute.Value {
+				existingAttribute.Value = newAttribute.Value
+				isUpdated = true
+			}
+
+			// If any field was updated, add it to the update list
+			if isUpdated {
+				attributesToUpdate = append(attributesToUpdate, existingAttribute)
+			}
+		} else {
+			// If the attribute does not exist in the new data, add it to the delete list
+			attributesToDelete = append(attributesToDelete, existingAttribute)
+		}
+	}
+
+	// Step 5: Identify new attributes (to create)
+	for _, newAttribute := range changedFieldValue {
+		if _, exists := existingAttributeMap[newAttribute.ID]; !exists {
+			// If the attribute is not in the existing attributes, add it to the creation list
+			newAttribute.ID = uuid.New().String()
+			newAttribute.PID = pid
+
+			attribute := ProductAttribute{
+				ID:    newAttribute.ID,
+				PID:   newAttribute.PID,
+				Name:  newAttribute.Name,
+				Value: newAttribute.Value,
+			}
+			attributesToCreate = append(attributesToCreate, attribute)
+		}
+	}
+
+	// Step 6: Perform batch database operations
+	// Create new attributes
+	if len(attributesToCreate) > 0 {
+		if err := db.Create(&attributesToCreate).Error; err != nil {
+			return fmt.Errorf("failed to create new attributes: %v", err)
+		}
+		log.Println("Created new attributes:", attributesToCreate)
+	}
+
+	// Update existing attributes
+	if len(attributesToUpdate) > 0 {
+		if err := db.Save(&attributesToUpdate).Error; err != nil {
+			return fmt.Errorf("failed to update attributes: %v", err)
+		}
+		log.Println("Updated existing attributes:", attributesToUpdate)
+	}
+
+	// Delete removed attributes
+	if len(attributesToDelete) > 0 {
+		if err := db.Delete(&attributesToDelete).Error; err != nil {
+			return fmt.Errorf("failed to delete attributes: %v", err)
+		}
+		log.Println("Deleted attributes:", attributesToDelete)
+	}
+	return nil
+}
+
+func (product *Product) UpdateProduct(db *gorm.DB, id string, changedFieldValue payloads.ProductRequest) error {
+	//avoiding race condition
+	productMutex.Lock()
+	defer productMutex.Unlock()
+
+	// Start transaction
+	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback() // Ensures rollback in case of panic
+		}
+	}()
+
+	// Fetch the existing product by ID
+	var existingP Product
+	if err := tx.Where("id = ?", id).First(&existingP).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("product not found with ID: %v", id)
+	}
+
+	// Update product fields
+	existingP.SKU = utils.UpdateField(existingP.SKU, changedFieldValue.SKU).(string)
+	existingP.Name = utils.UpdateField(existingP.Name, changedFieldValue.Name).(string)
+	existingP.Description = utils.UpdateField(existingP.Description, changedFieldValue.Description).(string)
+	existingP.ShortDesc = utils.UpdateField(existingP.ShortDesc, changedFieldValue.ShortDesc).(string)
+	existingP.Price = utils.UpdateField(existingP.Price, changedFieldValue.Price).(float64)
+	existingP.Quantity = utils.UpdateField(existingP.Quantity, changedFieldValue.Quantity).(int)
+	existingP.InStock = utils.UpdateField(existingP.InStock, changedFieldValue.InStock).(bool)
+	existingP.IsFeatured = utils.UpdateField(existingP.IsFeatured, changedFieldValue.IsFeatured).(bool)
+	existingP.Rating = utils.UpdateField(existingP.Rating, changedFieldValue.Rating).(float64)
+	existingP.Tax = utils.UpdateField(existingP.Tax, changedFieldValue.Tax).(float64)
+	existingP.Discount = utils.UpdateField(existingP.Discount, changedFieldValue.Discount).(float64)
+	existingP.DiscountType = utils.UpdateField(existingP.DiscountType, changedFieldValue.DiscountType).(string)
+	existingP.Weight = utils.UpdateField(existingP.Weight, changedFieldValue.Weight).(float64)
+	existingP.Length = utils.UpdateField(existingP.Length, changedFieldValue.Length).(float64)
+	existingP.Width = utils.UpdateField(existingP.Width, changedFieldValue.Width).(float64)
+	existingP.DimensionUnit = utils.UpdateField(existingP.DimensionUnit, changedFieldValue.DimensionUnit).(string)
+	existingP.IsDeleted = utils.UpdateField(existingP.IsDeleted, changedFieldValue.IsDeleted).(bool)
+	existingP.MetaTitle = utils.UpdateField(existingP.MetaTitle, changedFieldValue.MetaTitle).(string)
+	existingP.MetaDesc = utils.UpdateField(existingP.MetaDesc, changedFieldValue.MetaDesc).(string)
+	existingP.MainImage = utils.UpdateField(existingP.MainImage, changedFieldValue.MainImage).(string)
+
+	// Update images (if any)
+	if err := UpdateProductImages(db, existingP.ID, changedFieldValue.Images); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Update variants (if any)
+	if err := UpdateProductVariants(db, existingP.ID, changedFieldValue.Variants); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Update attributes (if any)
+	if err := UpdateProductAttributes(db, existingP.ID, changedFieldValue.Attributes); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Finally, update the main product record
+	if err := tx.Save(&existingP).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to update product: %v", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return nil
+}
+
+func (product *Product) DeleteProduct(db *gorm.DB, id string) error {
+	if err := product.CheckProductExistsById(db, id); err != nil {
 		return fmt.Errorf(utils.ProductNotFoundError, id)
 	}
 
@@ -143,12 +704,12 @@ func (p *Product) DeleteProduct(db *gorm.DB, id int) error {
 	return nil
 }
 
-func (p *Product) FetchProductCategories(db *gorm.DB) ([]string, error) {
-	var categories []string
-	if err := db.Table("products").Select("DISTINCT category").Where("is_deleted = ?", false).Pluck("category", &categories).Error; err != nil {
+func (product *Product) FetchProductCategories(db *gorm.DB) ([]Entities, error) {
+	var entities []Entities
+	if err := db.Find(&entities).Error; err != nil {
 		return nil, err
 	}
-	return categories, nil
+	return entities, nil
 }
 
 func CopyStructIntoStruct(struct1, struct2 interface{}) error {
@@ -181,47 +742,49 @@ func CopyStructIntoStruct(struct1, struct2 interface{}) error {
 	return nil
 }
 
-func FetchProductTagsName(db *gorm.DB, productID int) ([]string, []error) {
-	var productTags []ProductTag
-	var tagWithName []string
-	var errs []error
-	var tags []Tag
+//func FetchProductTagsName(db *gorm.DB, productID string) ([]string, []error) {
+//	var productTags []ProductTag
+//	var tagWithName []string
+//	var errs []error
+//	var tags []Tag
+//
+//	if err := db.Find(&productTags, productID).Error; err != nil {
+//		if errors.Is(err, gorm.ErrRecordNotFound) {
+//		} else {
+//			return tagWithName, []error{err}
+//		}
+//	}
+//
+//	var tagIDs []int
+//	for _, pt := range productTags {
+//		tagIDs = append(tagIDs, pt.TagID)
+//	}
+//
+//	if len(tagIDs) > 0 {
+//		if err := db.Where("id IN ?", tagIDs).Find(&tags).Error; err != nil {
+//			errs = append(errs, err)
+//		}
+//
+//		for _, t := range tags {
+//			tagWithName = append(tagWithName, t.Name)
+//		}
+//	}
+//
+//	if len(errs) > 0 {
+//		return tagWithName, errs
+//	}
+//
+//	return tagWithName, nil
+//}
 
-	if err := db.Find(&productTags, productID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-		} else {
-			return tagWithName, []error{err}
-		}
-	}
-
-	var tagIDs []int
-	for _, pt := range productTags {
-		tagIDs = append(tagIDs, pt.TagID)
-	}
-
-	if len(tagIDs) > 0 {
-		if err := db.Where("id IN ?", tagIDs).Find(&tags).Error; err != nil {
-			errs = append(errs, err)
-		}
-
-		for _, t := range tags {
-			tagWithName = append(tagWithName, t.Name)
-		}
-	}
-
-	if len(errs) > 0 {
-		return tagWithName, errs
-	}
-
-	return tagWithName, nil
-}
-
-func (p *Product) UpdateProductQuantity(db *gorm.DB) error {
-	if p.Quantity <= 0 {
-		p.InStock = false
+func (product *Product) UpdateProductQuantity(db *gorm.DB) error {
+	if product.Quantity <= 0 {
+		product.InStock = false
+	} else {
+		product.InStock = true
 	}
 	// update quantity and in_stock
-	if err := db.Model(&p).Where("id =?", p.ID).Updates(map[string]interface{}{"quantity": p.Quantity, "in_stock": p.InStock}).Error; err != nil {
+	if err := db.Model(&product).Where("id =?", product.ID).Updates(map[string]interface{}{"quantity": product.Quantity, "in_stock": product.InStock}).Error; err != nil {
 		return err
 	}
 
@@ -235,6 +798,7 @@ type FilterCriteria struct {
 	MaxPrice    float64  `json:"max_price"`
 	MinRating   float64  `json:"min_rating"`
 	Category    string   `json:"category"`
+	Brand       string   `json:"brand"`
 	MinQuantity int      `json:"min_quantity"`
 	MaxQuantity int      `json:"max_quantity"`
 	Tags        []string `json:"tags"`
@@ -242,7 +806,13 @@ type FilterCriteria struct {
 
 func FilterProduct(db *gorm.DB, criteria FilterCriteria) ([]payloads.ProductResponse, error) {
 	var products []Product
-	query := db.Model(&Product{}).Where("is_deleted = ?", false)
+	query := db.
+		Preload("Category.Entity").
+		Preload("Brand.Entity").
+		Preload("Tags.Entity").
+		Preload("Images").
+		Preload("Variants").
+		Preload("Attributes").Model(&Product{}).Where("is_deleted = ?", false)
 
 	// Dynamically apply filters to the query
 	if criteria.PName != "" {
@@ -257,14 +827,41 @@ func FilterProduct(db *gorm.DB, criteria FilterCriteria) ([]payloads.ProductResp
 	if criteria.MinRating > 0 {
 		query = query.Where("rating >= ?", criteria.MinRating)
 	}
-	if criteria.Category != "" {
-		query = query.Where("LOWER(category) LIKE ?", "%"+strings.ToLower(criteria.Category)+"%")
-	}
 	if criteria.MinQuantity > 0 {
 		query = query.Where("quantity >= ?", criteria.MinQuantity)
 	}
 	if criteria.MaxQuantity > 0 {
 		query = query.Where("quantity <= ?", criteria.MaxQuantity)
+	}
+	if criteria.Category != "" || criteria.Brand != "" {
+		query = query.Joins("JOIN product_entities AS pe ON pe.product_id = products.id").
+			Joins("JOIN entities AS e ON e.e_id = pe.entity_id")
+		if criteria.Category != "" {
+			categories := strings.Split(criteria.Category, ",")
+			categoryConditions := []string{}
+			var args []interface{}
+
+			for _, category := range categories {
+				categoryConditions = append(categoryConditions, "LOWER(e.entity_name) LIKE ?")
+				args = append(args, "%"+strings.ToLower(category)+"%")
+			}
+			query = query.Where("("+strings.Join(categoryConditions, " OR ")+")", args...)
+			query = query.Where("e.entity_type = ?", "category")
+		}
+
+		if criteria.Brand != "" {
+			brands := strings.Split(criteria.Brand, ",")
+			brandConditions := []string{}
+			var args []interface{}
+
+			for _, brand := range brands {
+				brandConditions = append(brandConditions, "LOWER(e.entity_name) LIKE ?")
+				args = append(args, "%"+strings.ToLower(brand)+"%")
+			}
+
+			query = query.Where("("+strings.Join(brandConditions, " OR ")+")", args...)
+			query = query.Where("e.entity_type1 = ?", "brand")
+		}
 	}
 	// Uncomment this if you have a Tags column or join for filtering
 	// if criteria.Tags != "" {
@@ -280,18 +877,245 @@ func FilterProduct(db *gorm.DB, criteria FilterCriteria) ([]payloads.ProductResp
 	filteredProducts := make([]payloads.ProductResponse, len(products))
 	for i, product := range products {
 		filteredProducts[i] = payloads.ProductResponse{
-			ID:         product.ID,
-			PName:      product.PName,
-			PDesc:      product.PDesc,
-			Price:      product.Price,
-			Quantity:   product.Quantity,
-			IsDeleted:  product.IsDeleted,
-			Category:   product.Category,
-			IsFeatured: product.IsFeatured,
-			TaxRate:    product.TaxRate,
-			Rating:     product.Rating,
+			ID:          product.ID,
+			Name:        product.Name,
+			SKU:         product.SKU,
+			ShortDesc:   product.ShortDesc,
+			Description: product.Description,
+			Price:       product.Price,
+			IsFeatured:  product.IsFeatured,
+			Tax:         product.Tax,
+			Rating:      product.Rating,
+			InStock:     product.InStock,
 		}
 	}
 
 	return filteredProducts, nil
+}
+
+func (product *Product) GetProductById(db *gorm.DB, id string) (*Product, error) {
+	var p Product
+	if err := db.
+		Preload("Category.Entity").
+		Preload("Brand.Entity").
+		Preload("Tags.Entity").
+		Preload("Images").
+		Preload("Variants").
+		Preload("Attributes").
+		First(&p, "id = ?", id).
+		Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf(utils.ProductNotFoundError, id)
+		}
+		return nil, err
+	}
+
+	if len(p.Images) > 0 {
+		for i := range p.Images {
+			p.Images[i].URL = CreateImageURL(p.Images[i].URL)
+		}
+	}
+	return &p, nil
+}
+
+// CopyProductToProductResponse converts a Product to a ProductResponse
+func CopyProductToProductResponse(product Product) payloads.ProductResponse {
+	// Create a ProductResponse instance
+	productResp := payloads.ProductResponse{
+		ID:            product.ID,
+		SellerID:      product.SellerID,
+		SKU:           product.SKU,
+		Name:          product.Name,
+		Description:   product.Description,
+		ShortDesc:     product.ShortDesc,
+		Price:         product.Price,
+		ComparePrice:  product.ComparePrice,
+		CostPrice:     product.CostPrice,
+		Quantity:      product.Quantity,
+		InStock:       product.InStock,
+		IsFeatured:    product.IsFeatured,
+		Rating:        product.Rating,
+		Tax:           product.Tax,
+		Discount:      product.Discount,
+		DiscountType:  product.DiscountType,
+		Weight:        product.Weight,
+		Length:        product.Length,
+		Width:         product.Width,
+		Height:        product.Height,
+		DimensionUnit: product.DimensionUnit,
+		StockStatus:   product.StockStatus,
+		MetaTitle:     product.MetaTitle,
+		MetaDesc:      product.MetaDesc,
+		SlugURL:       product.SlugURL,
+		MainImage:     product.MainImage,
+		CreatedAt:     product.CreatedAt,
+		UpdatedAt:     product.UpdatedAt,
+		DeletedAt:     product.DeletedAt,
+	}
+
+	// Copy Images
+	for _, img := range product.Images {
+		productResp.Images = append(productResp.Images, payloads.ProductImageResp{
+			ID:        img.ID,
+			PID:       img.PID,
+			URL:       img.URL,
+			IsMain:    img.IsMain,
+			SortOrder: img.SortOrder,
+		})
+	}
+
+	// Copy Variants
+	for _, variant := range product.Variants {
+		productResp.Variants = append(productResp.Variants, payloads.ProductVariantResp{
+			ID:       variant.ID,
+			PID:      variant.PID,
+			SKU:      variant.SKU,
+			Name:     variant.Name,
+			Price:    variant.Price,
+			Quantity: variant.Quantity,
+			Options:  variant.Options,
+		})
+	}
+
+	// Copy Attributes
+	for _, attribute := range product.Attributes {
+		productResp.Attributes = append(productResp.Attributes, payloads.ProductAttributeResp{
+			ID:    attribute.ID,
+			PID:   attribute.PID,
+			Name:  attribute.Name,
+			Value: attribute.Value,
+		})
+	}
+
+	return productResp
+}
+
+func CopyProductRequestToProduct(productReq payloads.ProductRequest) Product {
+	// Create a ProductResponse instance
+	product := Product{
+		ID:            productReq.ID,
+		SellerID:      productReq.SellerID,
+		SKU:           productReq.SKU,
+		Name:          productReq.Name,
+		Description:   productReq.Description,
+		ShortDesc:     productReq.ShortDesc,
+		Price:         productReq.Price,
+		ComparePrice:  productReq.ComparePrice,
+		CostPrice:     productReq.CostPrice,
+		Quantity:      productReq.Quantity,
+		InStock:       productReq.InStock,
+		IsFeatured:    productReq.IsFeatured,
+		Rating:        productReq.Rating,
+		Tax:           productReq.Tax,
+		Discount:      productReq.Discount,
+		DiscountType:  productReq.DiscountType,
+		Weight:        productReq.Weight,
+		Length:        productReq.Length,
+		Width:         productReq.Width,
+		Height:        productReq.Height,
+		DimensionUnit: productReq.DimensionUnit,
+		StockStatus:   productReq.StockStatus,
+		MetaTitle:     productReq.MetaTitle,
+		MetaDesc:      productReq.MetaDesc,
+		SlugURL:       productReq.SlugURL,
+		MainImage:     productReq.MainImage,
+		CreatedAt:     productReq.CreatedAt,
+		UpdatedAt:     productReq.UpdatedAt,
+		DeletedAt:     productReq.DeletedAt,
+	}
+
+	// Images
+	for _, img := range productReq.Images {
+		product.Images = append(product.Images, ProductImage{
+			ID:        img.ID,
+			PID:       img.PID,
+			URL:       img.URL,
+			IsMain:    img.IsMain,
+			SortOrder: img.SortOrder,
+		})
+	}
+
+	// Variants
+	for _, variant := range productReq.Variants {
+		product.Variants = append(product.Variants, ProductVariant{
+			ID:       variant.ID,
+			PID:      variant.PID,
+			SKU:      variant.SKU,
+			Name:     variant.Name,
+			Price:    variant.Price,
+			Quantity: variant.Quantity,
+			Options:  variant.Options,
+		})
+	}
+
+	// Attributes
+	for _, attribute := range productReq.Attributes {
+		product.Attributes = append(product.Attributes, ProductAttribute{
+			ID:    attribute.ID,
+			PID:   attribute.PID,
+			Name:  attribute.Name,
+			Value: attribute.Value,
+		})
+	}
+
+	return product
+}
+
+func CopyProductImgReqToProductImg(productImgReq payloads.ProductImageRequest) ProductImage {
+	return ProductImage{
+		ID:        productImgReq.ID,
+		PID:       productImgReq.PID,
+		URL:       productImgReq.URL,
+		IsMain:    productImgReq.IsMain,
+		SortOrder: productImgReq.SortOrder,
+	}
+}
+
+func CopyEntityToEntityResp(entity ProductEntity) payloads.ProductEntityResponse {
+	return payloads.ProductEntityResponse{
+		PidEid:     entity.ID,
+		Entity:     entity.Entity.EntityName,
+		EntityType: entity.EntityType,
+		CreatedAt:  entity.CreatedAt,
+	}
+}
+
+func UploadBase64Image(imageBase64, id, imgId string) (string, error) {
+	if imageBase64 == "" {
+		return "", fmt.Errorf("image data is missing in the request")
+	}
+
+	var imageType string
+	if strings.HasPrefix(imageBase64, "data:image/jpeg;base64,") {
+		imageBase64 = strings.TrimPrefix(imageBase64, "data:image/jpeg;base64,")
+		imageType = "jpeg"
+	} else if strings.HasPrefix(imageBase64, "data:image/png;base64,") {
+		imageBase64 = strings.TrimPrefix(imageBase64, "data:image/png;base64,")
+		imageType = "png"
+	} else if strings.HasPrefix(imageBase64, "data:image/jpg;base64,") {
+		imageBase64 = strings.TrimPrefix(imageBase64, "data:image/jpg;base64,")
+		imageType = "jpg"
+	} else {
+		return "", fmt.Errorf("unsupported image format")
+	}
+	decodedData, err := base64.StdEncoding.DecodeString(imageBase64)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base64: %v", err)
+	}
+
+	uploadDir := "../uploads"
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.Mkdir(uploadDir, 0755)
+		if err != nil {
+			return "", fmt.Errorf("failed to create upload directory: %v", err)
+		}
+	}
+
+	filePath := filepath.Join(uploadDir, fmt.Sprintf("image-%s-%s.%s", id, imgId, imageType))
+	err = os.WriteFile(filePath, decodedData, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to save image file: %v", err)
+	}
+
+	return filePath, nil
 }
