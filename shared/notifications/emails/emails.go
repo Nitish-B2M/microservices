@@ -8,6 +8,7 @@ import (
 	"gopkg.in/gomail.v2"
 	"html/template"
 	"log"
+	"net/smtp"
 	"os"
 	"strconv"
 	"time"
@@ -38,6 +39,7 @@ type OrderInvoiceAttachment struct {
 
 // GeneralEmailTemplate General Format
 type GeneralEmailTemplate struct {
+	From             string
 	To               string
 	Subject          string
 	BodyTemplateName string
@@ -122,4 +124,20 @@ func deleteInvoiceFiles(files []string) {
 			}
 		}
 	}()
+}
+
+func SendMailUsingMailHog(emailTemplate GeneralEmailTemplate) error {
+	err := godotenv.Load("../../.env")
+	if err != nil {
+		log.Fatal("Error loading .env file from emails.go")
+	}
+
+	host := os.Getenv("MH_MAIL_HOST")
+	port := os.Getenv("MH_MAIL_PORT")
+	address := host + ":" + port
+	err = smtp.SendMail(address, nil, emailTemplate.To, []string{emailTemplate.From}, []byte(emailTemplate.BodyTemplateName))
+	if err != nil {
+		return err
+	}
+	return nil
 }

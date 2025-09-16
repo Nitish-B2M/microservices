@@ -103,3 +103,94 @@ This section outlines the responsibilities and communication patterns between th
 | **Queue Service**   | - Handles message brokering, decouples services                                  | All services (as event consumers/producers)        | Asynchronous (Event-based)        |
 
 ---
+
+## API Documentation
+# API Endpoints
+
+## **User API**
+1. **Fetch all users**:  
+   `GET http://localhost:8080/users`
+2. **Fetch user profile**:  
+   `GET http://localhost:8080/user/profile`
+3. **Fetch user by ID**:  
+   `GET http://localhost:8080/user/{id}`
+4. **Update user profile**:  
+   `PUT http://localhost:8080/user/profile/update`
+5. **Delete user**:  
+   `DELETE http://localhost:8080/user/delete/{id}`
+6. **Activate user**:  
+   `PUT http://localhost:8080/user/activate/{id}`
+7. **Deactivate user**:  
+   `PUT http://localhost:8080/user/deactivate/{id}`
+8. **Reset user password**:  
+   `POST http://localhost:8080/user/password/reset`
+9. **Request password reset**:  
+   `POST http://localhost:8080/user/password/reset/request`
+10. **User login**:  
+    `POST http://localhost:8080/user/login`
+11. **Send email verification**:  
+    `POST http://localhost:8080/user/verify/send`
+12. **Verify user email**:  
+    `GET http://localhost:8080/user/verify/{token}`
+13. **Add user address**:  
+    `POST http://localhost:8080/user/address/add`
+14. **Fetch user addresses**:  
+    `GET http://localhost:8080/user/address/all`
+15. **Delete user address**:  
+    `DELETE http://localhost:8080/user/address/delete/{id}`
+16. **Update user address**:  
+    `PUT http://localhost:8080/user/address/update/{id}`
+
+---
+
+## **Product API**
+1. **Get all products**:  
+   `GET http://localhost:8081/products`
+2. **Get product by ID**:  
+   `GET http://localhost:8081/product/{id}`
+3. **Get product for cart by ID**:  
+   `GET http://localhost:8081/product/{id}/cart`
+4. **Filter products**:  
+   `GET http://localhost:8081/products/filter`
+5. **Add product (Admin)**:  
+   `POST http://localhost:8081/product/add`
+6. **Update product (Admin)**:  
+   `PUT http://localhost:8081/product/update/{id}`
+7. **Delete product (Admin)**:  
+   `DELETE http://localhost:8081/product/delete/{id}`
+8. **Upload product image**:  
+   `POST http://localhost:8081/product/{id}/image-upload`
+9. **Update product quantity (Admin)**:  
+   `POST http://localhost:8081/product/{id}/update-quantity`
+10. **Get product deals**:  
+    `GET http://localhost:8081/products/deals`
+11. **Get product offers**:  
+    `GET http://localhost:8081/products/offers`
+12. **Get featured products**:  
+    `GET http://localhost:8081/products/featured`
+
+---
+
+## **Cart API**
+1. **Get cart items by user ID**:  
+   `GET http://localhost:8082/user/cart`
+2. **Add product to cart**:  
+   `POST http://localhost:8082/user/cart/add`
+3. **Update cart quantity**:  
+   `POST http://localhost:8082/user/cart/{id}/update/qty`
+4. **Remove product from cart**:  
+   `POST http://localhost:8082/user/cart/delete`
+5. **Checkout cart**:  
+   `POST http://localhost:8082/user/cart/{cart_id}/checkout`
+6. **Get cart by cart ID**:  
+   `GET http://localhost:8082/user/cart/{cart_id}`
+
+---
+
+## **Order API**
+1. **Get all user orders**:  
+   `GET http://localhost:8083/orders`
+2. **Create order**:  
+   `POST http://localhost:8083/order/create`
+3. **Get order by ID**:  
+   `GET http://localhost:8083/order/:order_id`
