@@ -179,8 +179,8 @@ func (db *Service) GetOrderById(c *gin.Context) {
 		}
 		productData := product["data"].(map[string]interface{})
 
-		orderResp.Items[i].ProductName = productData["name"].(string)
-		orderResp.Items[i].ProductDesc = productData["description"].(string)
+		orderResp.Items[i].ProductName = productData["product_name"].(string)
+		orderResp.Items[i].ProductDesc = productData["product_desc"].(string)
 		orderResp.Items[i].Price = item.Price
 		orderResp.Items[i].Quantity = item.Quantity
 		orderResp.Items[i].Discount = item.Discount
