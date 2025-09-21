@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"e-commerce-backend/shared/utils"
 	"fmt"
-	"github.com/joho/godotenv"
-	"gopkg.in/gomail.v2"
 	"html/template"
 	"log"
 	"net/smtp"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
+	"gopkg.in/gomail.v2"
 )
 
 type EmailTestData struct {

@@ -17,7 +17,9 @@ type UserCreation struct {
 }
 
 func SendEmail(to string, subject string, body string) error {
-	err := godotenv.Load()
+	dir, _ := os.Getwd()
+	log.Println("Working directory:", dir)
+	err := godotenv.Load("../../.env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
