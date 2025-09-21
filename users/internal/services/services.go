@@ -1,12 +1,16 @@
 package services
 
 import (
+	"context"
 	"e-commerce-backend/shared/notifications/emails"
 	"e-commerce-backend/shared/notifications/emails/templates"
 	"e-commerce-backend/shared/utils"
 	"e-commerce-backend/users/internal/models"
+	"e-commerce-backend/users/internal/repository"
 	"e-commerce-backend/users/pkg/constants"
 	"e-commerce-backend/users/pkg/payloads"
+	pkg_utils "e-commerce-backend/users/utils"
+	"e-commerce-backend/users/validator"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +26,16 @@ import (
 	"gorm.io/gorm"
 )
 
+type Services struct {
+	UserRepo *repository.UserRepo
+}
+
+func NewService(userRepo *repository.UserRepo) *Services {
+	return &Services{
+		UserRepo: userRepo,
+	}
+}
+
 type Service struct {
 	DB *gorm.DB
 }
@@ -30,6 +44,10 @@ func NewUser(db *gorm.DB) *Service {
 	return &Service{
 		DB: db,
 	}
+}
+
+type UersInterface interface {
+	CreateUser(db *gorm.DB) error
 }
 
 type UserInterface interface {
@@ -126,7 +144,7 @@ func (db *Service) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 		output = userResponses
 	}
 
-	utils.JsonResponse(output, w, utils.UsersFetchedSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.UsersFetchedSuccessfully, output, http.StatusOK)
 }
 
 func (db *Service) GetUserProfile(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +231,7 @@ func (db *Service) CreateUser(w http.ResponseWriter, r *http.Request) {
 	emailContent := emails.UserCreation{Email: userResponse.Email, Role: "user"} //need to change role as role functionality added
 	emails.EmailWorkerWithGoRoutine(userResponse.Email, templates.UserRegistrationSuccessFul, templates.USER_CREATED_TEMPLATE, emailContent, []string{})
 
-	utils.JsonResponse(userResponse, w, fmt.Sprintf(utils.UserCreatedSuccessfully, 1), http.StatusOK)
+	utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserCreatedSuccessfully, id), userResponse, http.StatusOK)
 }
 
 func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +253,7 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !oldUserData.IsActive {
-		utils.JsonResponse(map[string]interface{}{"user_id": userID}, w, utils.RequestUserIsDeactivated, http.StatusForbidden)
+		utils.SuccessResponseFunc(w, utils.RequestUserIsDeactivated, map[string]interface{}{"user_id": userID}, http.StatusForbidden)
 		return
 	}
 
@@ -250,12 +268,12 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	updatedFields := trackUpdatedUserFields(oldUserData, newUserData)
 	if len(updatedFields) == 0 {
-		utils.JsonResponse(oldUserData, w, fmt.Sprintf(utils.UserNotModified, userID), http.StatusNotModified)
+		utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserNotModified, userID), oldUserData, http.StatusNotModified)
 		return
 	}
 
 	if _, err := oldUserData.UpdateUser(db.DB, userID, updatedFields); err != nil {
-		utils.JsonResponse(oldUserData, w, fmt.Sprintf(utils.UserUpdateError, userID), http.StatusInternalServerError)
+		utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserUpdateError, userID), oldUserData, http.StatusInternalServerError)
 		return
 	}
 
@@ -269,7 +287,7 @@ func (db *Service) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(userResponse, w, utils.ProfileUpdatedSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.ProfileUpdatedSuccessfully, userResponse, http.StatusOK)
 }
 
 func (db *Service) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -299,7 +317,7 @@ func (db *Service) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(map[string]interface{}{"user_id": id}, w, fmt.Sprintf(utils.UserDeletedSuccessfully, id), http.StatusOK)
+	utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserDeletedSuccessfully, id), map[string]interface{}{"user_id": id}, http.StatusOK)
 }
 
 func (db *Service) DeActivateUser(w http.ResponseWriter, r *http.Request) {
@@ -322,7 +340,7 @@ func (db *Service) DeActivateUser(w http.ResponseWriter, r *http.Request) {
 
 	//check user already de-active or not
 	if !user.IsActive {
-		utils.JsonResponse(map[string]interface{}{"user_id": id}, w, fmt.Sprintf(utils.UserAlreadyDeactivated, id), http.StatusForbidden)
+		utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserAlreadyDeactivated, id), map[string]interface{}{"user_id": id}, http.StatusForbidden)
 		return
 	}
 
@@ -331,7 +349,7 @@ func (db *Service) DeActivateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(map[string]interface{}{"user_id": id}, w, utils.UserDeActivationSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.UserDeActivationSuccessfully, map[string]interface{}{"user_id": id}, http.StatusOK)
 }
 
 func (db *Service) ActivateUser(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +372,7 @@ func (db *Service) ActivateUser(w http.ResponseWriter, r *http.Request) {
 
 	//check user already active or not
 	if user.IsActive {
-		utils.JsonResponse(map[string]interface{}{"user_id": id}, w, fmt.Sprintf(utils.UserAlreadyActivated, id), http.StatusConflict)
+		utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserAlreadyActivated, id), map[string]interface{}{"user_id": id}, http.StatusConflict)
 		return
 	}
 
@@ -363,7 +381,7 @@ func (db *Service) ActivateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(map[string]interface{}{"user_id": id}, w, utils.UserReactivationSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.UserReactivationSuccessfully, map[string]interface{}{"user_id": id}, http.StatusOK)
 }
 
 func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
@@ -422,7 +440,7 @@ func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if ok, err := utils.CompareHashedPassword(user.Password, loginData.Password); !ok {
+		if err := utils.CompareHashedPassword(user.Password, loginData.Password); err != nil {
 			utils.ErrorResponseFunc(w, "Invalid email or password", http.StatusUnauthorized, err)
 			return
 		}
@@ -439,7 +457,7 @@ func (db *Service) LoginUser(w http.ResponseWriter, r *http.Request) {
 			User:       *userResponse,
 		}
 
-		utils.JsonResponse(authResponse, w, fmt.Sprintf(utils.UserLoggedInSuccessfully, userResponse.ID), http.StatusOK)
+		utils.SuccessResponseFunc(w, fmt.Sprintf(utils.UserLoggedInSuccessfully, userResponse.ID), authResponse, http.StatusOK)
 		return
 	}
 }
@@ -471,21 +489,22 @@ func (db *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	token, err := userData.GenerateUserToken(db.DB, constants.PasswordReset)
-	if err != nil {
+	token := utils.GenerateRandomToken()
+
+	userRepo := repository.NewUserRepo(db.DB)
+	if err := userRepo.StoreToken(userData.ID, token, constants.PasswordReset); err != nil {
 		utils.ErrorResponseFunc(w, utils.TokenGenerationError, http.StatusInternalServerError, err)
 		return
 	}
 
-	clientURL := os.Getenv("CLIENT_URL")
-	clientURL += os.Getenv("CLIENT_PORT") + "/new-password?token=" + token
+	clientURL := os.Getenv("CLIENT_URL") + "/new-password?token=" + token
 	bodyContent := map[string]interface{}{
 		"CustomerName":      userData.FirstName + " " + userData.LastName,
 		"ResetPasswordLink": clientURL,
 	}
 	log.Println(bodyContent)
 	emails.EmailWorker(request.Email, templates.PasswordResetSubject, templates.PASSWORD_RESET_TEMPLATE, bodyContent, []string{})
-	utils.JsonResponse(map[string]interface{}{"user_id": userData.ID, "reset_password_link": clientURL}, w, utils.ResetPasswordTokenSent, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.ResetPasswordTokenSent, map[string]interface{}{"user_id": userData.ID, "reset_password_link": clientURL}, http.StatusOK)
 }
 
 func (db *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -525,7 +544,7 @@ func (db *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(map[string]interface{}{"user_id": userToken.UserID}, w, utils.NewPasswordSetSuccessfully, http.StatusCreated)
+	utils.SuccessResponseFunc(w, utils.NewPasswordSetSuccessfully, map[string]interface{}{"user_id": userToken.UserID}, http.StatusCreated)
 }
 
 func (db *Service) SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
@@ -561,25 +580,26 @@ func (db *Service) SendVerificationEmail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	token, err := userData.GenerateUserToken(db.DB, constants.EmailVerification)
-	if err != nil {
+	userRepo := repository.NewUserRepo(db.DB)
+	token := utils.GenerateRandomToken()
+	if err := userRepo.StoreToken(userData.ID, token, constants.EmailVerificationType); err != nil {
 		utils.ErrorResponseFunc(w, utils.TokenGenerationError, http.StatusInternalServerError, err)
 		return
 	}
 
 	verificationURL := fmt.Sprintf("http://localhost:8080/user/verify/%s", token)
-	utils.JsonResponse(verificationURL, w, utils.EmailVerificationTokenSent, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.EmailVerificationTokenSent, verificationURL, http.StatusOK)
 }
 
 func (db *Service) VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
-	emailVerificationToken, err := utils.GetTokenFromPath(r)
+	EmailVerificationToken, err := utils.GetTokenFromPath(r)
 	if err != nil {
 		utils.ErrorResponseFunc(w, utils.InvalidTokenError, http.StatusBadRequest, err)
 		return
 	}
 
 	var user models.User
-	userData, err := user.ValidateAndUseToken(db.DB, emailVerificationToken, constants.EmailVerification)
+	userData, err := user.ValidateAndUseToken(db.DB, EmailVerificationToken, constants.EmailVerificationType)
 	if err != nil {
 		utils.ErrorResponseFunc(w, utils.InvalidTokenError, http.StatusBadRequest, err)
 		return
@@ -590,7 +610,7 @@ func (db *Service) VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(map[string]interface{}{"user_id": userData.UserID}, w, utils.EmailVerifiedSuccessfully, http.StatusOK)
+	utils.SuccessResponseFunc(w, utils.EmailVerifiedSuccessfully, map[string]interface{}{"user_id": userData.UserID}, http.StatusOK)
 }
 
 func customEmailErrorMessage(w http.ResponseWriter, err error, email string) bool {
@@ -606,4 +626,149 @@ func customEmailErrorMessage(w http.ResponseWriter, err error, email string) boo
 	}
 	utils.ErrorResponseFunc(w, utils.UnexpectedDatabaseError, http.StatusInternalServerError, err)
 	return false
+}
+
+func (s *Services) CreateUser(ctx context.Context, data validator.CreateUserValidator) (*models.User, error) {
+	// Check if the email already exists
+	// exists, err := s.IsEmailExists(ctx, data.Email)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if exists {
+	// 	return nil, errors.New(utils.EmailAlreadyExistsError)
+	// }
+
+	if err := utils.CheckPasswordSecurity(data.Password); err != nil {
+		return nil, err
+	}
+
+	hashedPassword, err := utils.HashedPassword(data.Password)
+	if err != nil {
+		return nil, err
+	}
+
+	user := &models.User{
+		FirstName: data.FirstName,
+		LastName:  data.LastName,
+		Email:     data.Email,
+		Password:  hashedPassword,
+	}
+
+	// createdUser, err := s.UserRepo.CreateUser(user)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// Send email
+	templateData := pkg_utils.UserCreationTD{
+		Email:    user.Email,
+		FullName: user.FirstName + " " + user.LastName,
+	}
+
+	template, err := pkg_utils.GetUserCreatedTemplate(templateData)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := utils.SendEmail(user.Email, pkg_utils.SubjectUserCreated, template); err != nil {
+		return nil, err
+	}
+
+	// Send verification email
+	if err := s.SendVerificationEmail(user); err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func (s *Services) IsEmailExists(ctx context.Context, email string) (bool, error) {
+	return s.UserRepo.IsEmailExists(email)
+}
+
+func (s *Services) SendVerificationEmail(user *models.User) error {
+	err := godotenv.Load("../../.env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	token := utils.GenerateRandomToken()
+	if err := s.UserRepo.StoreToken(user.ID, token, constants.EmailVerificationType); err != nil {
+		return err
+	}
+
+	url := os.Getenv("CLIENT_URL")
+	template, err := pkg_utils.SendVerificationEmail(pkg_utils.VerificationMailTD{
+		VerificationURL: url + "/verify?token=" + token,
+		FullName:        user.FirstName + " " + user.LastName,
+		Email:           user.Email,
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := utils.SendEmail(user.Email, pkg_utils.VerificationMailSubject, template); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Services) VerifyToken(token string, tokenType int) (*models.UserToken, error) {
+	userToken, err := s.UserRepo.VerifyToken(token, constants.EmailVerificationType)
+	if err != nil {
+		return nil, err
+	}
+
+	return userToken, nil
+}
+
+func (s *Services) LoginUser(ctx context.Context, data validator.LoginUserValidator) (*payloads.UserLoginResponse, error) {
+	var user models.LoginUser
+
+	user.Email = data.Email
+	user.Password = data.Password
+
+	dbUser, err := s.UserRepo.LoginUser(user)
+	if err != nil {
+		return nil, err
+	}
+	if err := utils.CompareHashedPassword(dbUser.Password, data.Password); err != nil {
+		return nil, err
+	}
+
+	expireTime := time.Now().Add(time.Hour * 24).Unix()
+	token, err := utils.GenerateJWT(dbUser.ID, user.Email, "user.Username", expireTime)
+	if err != nil {
+		return nil, err
+	}
+
+	authResponse := payloads.UserLoginResponse{
+		Token:      token,
+		ExpireTime: expireTime,
+		User: payloads.UserProfileResp{
+			ID:         dbUser.ID,
+			FirstName:  dbUser.FirstName,
+			LastName:   dbUser.LastName,
+			FullName:   dbUser.FirstName + " " + dbUser.LastName,
+			Email:      dbUser.Email,
+			Username:   dbUser.Username,
+			IsVerified: dbUser.IsVerified,
+			IsActive:   dbUser.IsActive,
+			Gender:     dbUser.Gender,
+			BaseModel: payloads.BaseModel{
+				CreatedAt: dbUser.CreatedAt,
+				UpdatedAt: dbUser.UpdatedAt,
+			},
+		},
+	}
+	return &authResponse, nil
+}
+
+func (s *Services) FetchUserProfileByID(userID int) (*payloads.UserProfileResp, error) {
+	user, err := s.UserRepo.FetchUserProfileByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }

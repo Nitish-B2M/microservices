@@ -1,8 +1,9 @@
+// Package constants
 package constants
 
 const (
-	PasswordReset     = 1
-	EmailVerification = 2
+	PasswordReset         = 1
+	EmailVerificationType = 2
 )
 
 const (
