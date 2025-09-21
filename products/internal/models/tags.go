@@ -29,23 +29,23 @@ func CreateEntity(db *gorm.DB, entity string, entityType string) (uint, error) {
 	if err := db.Create(&newEntity).Error; err != nil {
 		return 0, fmt.Errorf("failed to create entity: %v", err)
 	}
-	return newEntity.EID, nil
+	return newEntity.ID, nil
 }
 
-func StoreProductEntity(db *gorm.DB, entityID uint, entityType string, productID string) (ProductEntity, error) {
-	productEntity := ProductEntity{
-		EntityID:   entityID,
+func StoreProductEntity(db *gorm.DB, entityID uint, entityType string, productID string) (Entities, error) {
+	productEntity := Entities{
+		ID:         entityID,
 		ProductID:  productID,
 		EntityType: entityType,
 	}
 	if err := db.Create(&productEntity).Error; err != nil {
-		return ProductEntity{}, fmt.Errorf("failed to create product entity: %v", err)
+		return Entities{}, fmt.Errorf("failed to create product entity: %v", err)
 	}
 	return productEntity, nil
 }
 
-func CheckAndCreateTags(db *gorm.DB, tags []string, productID string) ([]ProductEntity, error) {
-	var tagsResp []ProductEntity
+func CheckAndCreateTags(db *gorm.DB, tags []string, productID string) ([]Entities, error) {
+	var tagsResp []Entities
 
 	for _, tagName := range tags {
 		tagName = strings.ToLower(strings.TrimSpace(tagName))
@@ -71,9 +71,9 @@ func CheckAndCreateTags(db *gorm.DB, tags []string, productID string) ([]Product
 			}
 		}
 
-		// Now insert into the ProductEntity table using tag.EntityID
-		productTagEntity := ProductEntity{
-			EntityID:   tag.EID,
+		// Now insert into the Entities table using tag.EntityID
+		productTagEntity := Entities{
+			ID:         tag.ID,
 			EntityType: "tag",
 			ProductID:  productID,
 		}
@@ -88,7 +88,7 @@ func CheckAndCreateTags(db *gorm.DB, tags []string, productID string) ([]Product
 	return tagsResp, nil
 }
 
-func CheckAndCreateCategoryOrBrand(db *gorm.DB, entity string, entityType string, productID string) (*ProductEntity, error) {
+func CheckAndCreateCategoryOrBrand(db *gorm.DB, entity string, entityType string, productID string) (*Entities, error) {
 	if entityType != EntityTypeCategory && entityType != EntityTypeBrand {
 		return nil, fmt.Errorf("invalid entity type: %s", entityType)
 	}
@@ -108,7 +108,7 @@ func CheckAndCreateCategoryOrBrand(db *gorm.DB, entity string, entityType string
 			if err != nil {
 				return nil, fmt.Errorf("failed to create %s %s: %v", entityType, entity, err)
 			}
-			existingEntity.EID = entityID
+			existingEntity.ID = entityID
 			existingEntity.EntityName = entity
 		} else {
 			return nil, fmt.Errorf("error checking %s %s: %v", entityType, entity, err)
@@ -116,7 +116,7 @@ func CheckAndCreateCategoryOrBrand(db *gorm.DB, entity string, entityType string
 	}
 
 	// Create or update product-entity relationship
-	productEntity, err := StoreProductEntity(db, existingEntity.EID, entityType, productID)
+	productEntity, err := StoreProductEntity(db, existingEntity.ID, entityType, productID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to link %s %s to product: %v", entityType, entity, err)
 	}
@@ -126,9 +126,9 @@ func CheckAndCreateCategoryOrBrand(db *gorm.DB, entity string, entityType string
 
 func GetProductEntities(db *gorm.DB, productID string, entityType string) ([]payloads.EntityLabelResponse, error) {
 	var entities []struct {
-		ProductEntityID uint
-		Entity          string
-		EntityType      string
+		EntitesID  uint
+		Entity     string
+		EntityType string
 	}
 
 	err := db.Table("product_entities").
@@ -144,9 +144,9 @@ func GetProductEntities(db *gorm.DB, productID string, entityType string) ([]pay
 	var response []payloads.EntityLabelResponse
 	for _, e := range entities {
 		response = append(response, payloads.EntityLabelResponse{
-			ProductEntityID: e.ProductEntityID,
-			Entity:          e.Entity,
-			EntityType:      e.EntityType,
+			ID:         e.EntitesID,
+			Entity:     e.Entity,
+			EntityType: e.EntityType,
 		})
 	}
 

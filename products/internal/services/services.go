@@ -67,6 +67,15 @@ func (db *Service) GetProductsForSeller(w http.ResponseWriter, r *http.Request) 
 	utils.SuccessResponseFunc(w, utils.ProductsFetchedSuccessfully, products, http.StatusOK)
 }
 
+func (db *Service) FetchProductByID(w http.ResponseWriter, r *http.Request) {
+	pid := utils.GetIDFromPathString(r)
+	if pid == "" {
+		utils.ErrorResponseFunc(w, utils.InvalidProductIDError, http.StatusBadRequest, errors.New(utils.InvalidProductIDError))
+		return
+	}
+
+}
+
 func (db *Service) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	if !utils.CheckRequestMethod(w, r, http.MethodGet) {
 		return

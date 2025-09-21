@@ -3,6 +3,8 @@ package handlers
 
 import (
 	"e-commerce-backend/products/dbs"
+	"e-commerce-backend/products/internal/controller"
+	"e-commerce-backend/products/internal/repository"
 	"e-commerce-backend/products/internal/services"
 	mw "e-commerce-backend/shared/middlewares"
 	"net/http"
@@ -20,18 +22,21 @@ func ProductHandler(r *mux.Router) {
 }
 
 func ProductRoutes(r *mux.Router) {
+	productRepo := repository.NewProductRepo(dbs.DB)
+	svc := services.NewService(productRepo)
+	productController := controller.NewProductController(svc)
+
 	productSvc := services.NewProduct(dbs.DB)
-	nProductSvc := services.NewProductService(dbs.DB)
 	filterService := services.NewFilterService(dbs.DB)
 
-	mw.HandleGet(r, "/list", "", nProductSvc.GetProduct)
+	mw.HandleGet(r, "/list", "", productController.FetchProducts)
 	mw.HandleGet(r, "/categories", "", productSvc.FetchCategories)
 	mw.HandleGet(r, "/filter", "", filterService.FilterProducts)
 	mw.HandleGet(r, "/deals", "", filterService.GetDeals)
 	mw.HandleGet(r, "/offers", "", filterService.GetOffers)
 	mw.HandleGet(r, "/featured", "", filterService.GetFeatured)
 
-	mw.HandleGet(r, "/item/{id}", "", nProductSvc.GetProductByID, mw.AuthMiddleware)
+	mw.HandleGet(r, "/item/{id}", "", productController.FetchProductByID)
 	mw.HandleGet(r, "/item/{id}/cart", "", productSvc.GetProductByIDForCart, mw.AuthMiddleware)
 }
 
