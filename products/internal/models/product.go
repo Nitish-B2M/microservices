@@ -14,9 +14,21 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+func migrateDB(db *gorm.DB, models ...interface{}) {
+	for _, model := range models {
+		if !db.Migrator().HasTable(model) {
+			if err := db.Migrator().CreateTable(model); err != nil {
+				log.Printf("Error creating table %v: %v", model, err)
+				return
+			}
+		}
+	}
+
+	log.Printf(utils.SchemaMigrationSuccess, "Migrated product-related tables")
+}
 
 func InitNewProductSchema(db *gorm.DB) {
 	if db == nil {
@@ -54,19 +66,11 @@ func InitNewProductSchema(db *gorm.DB) {
 		&ProductImage{},
 		&ProductVariant{},
 		&ProductAttribute{},
-		&ProductEntity{},
+		&Entities{},
 	}
 
-	// Perform migrations
-	for _, model := range migrations {
-		if err := db.AutoMigrate(model); err != nil {
-			log.Printf("Error migrating %T: %v", model, err)
-			return
-		}
-		log.Printf("Successfully migrated %T", model)
-	}
-
-	log.Printf(utils.SchemaMigrationSuccess, "All product-related tables")
+	// Migrate all tables
+	migrateDB(db, migrations...)
 }
 
 func NewVariant() *ProductVariant {
@@ -77,7 +81,7 @@ func NewVariant() *ProductVariant {
 		SKU:      "",
 		Price:    0,
 		Quantity: 0,
-		Options:  datatypes.JSON([]byte("{}")),
+		Options:  []VariantOption{},
 	}
 }
 
@@ -123,11 +127,11 @@ func (product *Product) CheckProductExistsById(db *gorm.DB, id string) error {
 		return err
 	}
 
-	if len(product.Images) > 0 {
-		for i := range product.Images {
-			product.Images[i].URL = CreateImageURL(product.Images[i].URL)
-		}
-	}
+	// if len(product.Images) > 0 {
+	// 	for i := range product.Images {
+	// 		product.Images[i].URL = CreateImageURL(product.Images[i].URL)
+	// 	}
+	// }
 	return nil
 }
 
@@ -142,11 +146,11 @@ func GetProducts(db *gorm.DB) ([]payloads.ProductResponse, error) {
 
 	var response []payloads.ProductResponse
 	for _, product := range products {
-		if len(product.Images) > 0 {
-			for i := range product.Images {
-				product.Images[i].URL = CreateImageURL(product.Images[i].URL)
-			}
-		}
+		// if len(product.Images) > 0 {
+		// 	for i := range product.Images {
+		// 		product.Images[i].URL = CreateImageURL(product.Images[i].URL)
+		// 	}
+		// }
 		res := CopyProductToProductResponse(product)
 		response = append(response, res)
 	}
@@ -162,13 +166,13 @@ func GetProductsForSeller(db *gorm.DB) ([]Product, error) {
 		return nil, err
 	}
 
-	for i := range products {
-		if len(products[i].Images) > 0 {
-			for j := range products[i].Images {
-				products[i].Images[j].URL = CreateImageURL(products[i].Images[j].URL)
-			}
-		}
-	}
+	// for i := range products {
+	// 	if len(products[i].Images) > 0 {
+	// 		for j := range products[i].Images {
+	// 			products[i].Images[j].URL = CreateImageURL(products[i].Images[j].URL)
+	// 		}
+	// 	}
+	// }
 	return products, nil
 }
 
@@ -224,14 +228,14 @@ func (product *Product) AddProduct(db *gorm.DB, category, brand string, tags []s
 	}()
 
 	//Handle product variants
-	if len(product.Variants) > 0 {
-		for _, variant := range product.Variants {
-			if err := CheckProductExistsBySKU(tx, variant.SKU, "product_variants"); err == nil {
-				tx.Rollback()
-				return nil, fmt.Errorf("product variant with SKU %s already exists", variant.SKU)
-			}
-		}
-	}
+	// if len(product.Variants) > 0 {
+	// 	for _, variant := range product.Variants {
+	// 		if err := CheckProductExistsBySKU(tx, variant.SKU, "product_variants"); err == nil {
+	// 			tx.Rollback()
+	// 			return nil, fmt.Errorf("product variant with SKU %s already exists", variant.SKU)
+	// 		}
+	// 	}
+	// }
 
 	// Create the product
 	if err := tx.Create(&product).Error; err != nil {
@@ -240,68 +244,68 @@ func (product *Product) AddProduct(db *gorm.DB, category, brand string, tags []s
 	}
 
 	// Create product variants
-	if len(product.Variants) > 0 {
-		for i := range product.Variants {
-			product.Variants[i].PID = product.ID
-			if err := tx.Create(&product.Variants[i]).Error; err != nil {
-				tx.Rollback()
-				return nil, fmt.Errorf("error creating product variants: %v", err)
-			}
-		}
-	}
+	// if len(product.Variants) > 0 {
+	// 	for i := range product.Variants {
+	// 		product.Variants[i].PID = product.ID
+	// 		if err := tx.Create(&product.Variants[i]).Error; err != nil {
+	// 			tx.Rollback()
+	// 			return nil, fmt.Errorf("error creating product variants: %v", err)
+	// 		}
+	// 	}
+	// }
 
 	// Create product images
-	if len(product.Images) > 0 {
-		for i := range product.Images {
-			product.Images[i].PID = product.ID
-			if err := tx.Create(&product.Images[i]).Error; err != nil {
-				tx.Rollback()
-				return nil, fmt.Errorf("error creating product images: %v", err)
-			}
-		}
-	}
+	// if len(product.Images) > 0 {
+	// 	for i := range product.Images {
+	// 		product.Images[i].PID = product.ID
+	// 		if err := tx.Create(&product.Images[i]).Error; err != nil {
+	// 			tx.Rollback()
+	// 			return nil, fmt.Errorf("error creating product images: %v", err)
+	// 		}
+	// 	}
+	// }
 
 	// Create product attributes
-	if len(product.Attributes) > 0 {
-		for i := range product.Attributes {
-			product.Attributes[i].PID = product.ID
-			if err := tx.Create(&product.Attributes[i]).Error; err != nil {
-				tx.Rollback()
-				return nil, fmt.Errorf("error creating product attributes: %v", err)
-			}
-		}
-	}
+	// if len(product.Attributes) > 0 {
+	// 	for i := range product.Attributes {
+	// 		product.Attributes[i].PID = product.ID
+	// 		if err := tx.Create(&product.Attributes[i]).Error; err != nil {
+	// 			tx.Rollback()
+	// 			return nil, fmt.Errorf("error creating product attributes: %v", err)
+	// 		}
+	// 	}
+	// }
 
 	// Handle tags, categories, and brands within the same transaction
 	// Tags
-	if len(tags) > 0 {
-		entityLabelResp, err := CheckAndCreateTags(tx, tags, product.ID)
-		if err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("error creating tags: %v", err)
-		}
-		product.Tags = entityLabelResp
-	}
+	// if len(tags) > 0 {
+	// 	entityLabelResp, err := CheckAndCreateTags(tx, tags, product.ID)
+	// 	if err != nil {
+	// 		tx.Rollback()
+	// 		return nil, fmt.Errorf("error creating tags: %v", err)
+	// 	}
+	// 	product.Tags = entityLabelResp
+	// }
 
 	// category
-	if len(category) > 0 {
-		entityProductCategoryResp, err := CheckAndCreateCategoryOrBrand(tx, category, "category", product.ID)
-		if err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("error creating category: %v", err)
-		}
-		product.Category = *entityProductCategoryResp
-	}
+	// if len(category) > 0 {
+	// 	entityProductCategoryResp, err := CheckAndCreateCategoryOrBrand(tx, category, "category", product.ID)
+	// 	if err != nil {
+	// 		tx.Rollback()
+	// 		return nil, fmt.Errorf("error creating category: %v", err)
+	// 	}
+	// 	product.Category = *entityProductCategoryResp
+	// }
 
-	// brand
-	if len(brand) > 0 {
-		entityProductBrandResp, err := CheckAndCreateCategoryOrBrand(tx, brand, "brand", product.ID)
-		if err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("error creating brand: %v", err)
-		}
-		product.Brand = *entityProductBrandResp
-	}
+	// // brand
+	// if len(brand) > 0 {
+	// 	entityProductBrandResp, err := CheckAndCreateCategoryOrBrand(tx, brand, "brand", product.ID)
+	// 	if err != nil {
+	// 		tx.Rollback()
+	// 		return nil, fmt.Errorf("error creating brand: %v", err)
+	// 	}
+	// 	product.Brand = *entityProductBrandResp
+	// }
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
@@ -397,125 +401,126 @@ func UpdateProductImages(db *gorm.DB, pid string, changedFieldValue []payloads.P
 
 func UpdateProductVariants(db *gorm.DB, pid string, changedFieldValue []payloads.ProductVariantRequest) error {
 	var existingVariants []ProductVariant
-	if err := db.Where("p_id = ?", pid).Find(&existingVariants).Error; err != nil {
+	if err := db.Preload("Options").Where("p_id = ?", pid).Find(&existingVariants).Error; err != nil {
 		return fmt.Errorf("failed to fetch existing variants: %v", err)
 	}
-	// Create a map for existing variants by ID for quick lookups
+
+	// Map of existing variants by ID
 	existingVariantMap := make(map[string]ProductVariant)
-	for _, existingVariant := range existingVariants {
-		existingVariantMap[existingVariant.ID] = existingVariant
+	for _, ev := range existingVariants {
+		existingVariantMap[ev.ID] = ev
 	}
 
-	// Create a map for new variants by ID for quick lookups
+	// Map of incoming variants by ID
 	newVariantMap := make(map[string]payloads.ProductVariantRequest)
-	for _, newVariant := range changedFieldValue {
-		newVariantMap[newVariant.ID] = newVariant
+	for _, nv := range changedFieldValue {
+		newVariantMap[nv.ID] = nv
 	}
 
-	// Variables to accumulate changes
 	var variantsToCreate []ProductVariant
 	var variantsToUpdate []ProductVariant
 	var variantsToDelete []ProductVariant
 
-	// Step 1: Identify updates and deletions
-	for _, existingVariant := range existingVariants {
-		if newVariant, exists := newVariantMap[existingVariant.ID]; exists {
-			// Check if the existing variant has any updates
+	// Step 1: Update or mark for deletion
+	for _, existing := range existingVariants {
+		if updated, exists := newVariantMap[existing.ID]; exists {
 			isUpdated := false
 
-			// Update Name if changed
-			if existingVariant.Name != newVariant.Name {
-				existingVariant.Name = newVariant.Name
+			if existing.Name != updated.Name {
+				existing.Name = updated.Name
+				isUpdated = true
+			}
+			if existing.Price != updated.Price {
+				existing.Price = updated.Price
+				isUpdated = true
+			}
+			if existing.Quantity != updated.Quantity {
+				existing.Quantity = updated.Quantity
+				isUpdated = true
+			}
+			if existing.SKU != updated.SKU {
+				existing.SKU = updated.SKU
 				isUpdated = true
 			}
 
-			// Update Price if changed
-			if existingVariant.Price != newVariant.Price {
-				existingVariant.Price = newVariant.Price
-				isUpdated = true
+			// ⚠️ Update Options: Replace old with new
+			if err := db.Where("variant_id = ?", existing.ID).Delete(&VariantOption{}).Error; err != nil {
+				return fmt.Errorf("failed to clear old options: %v", err)
 			}
 
-			// Update Quantity if changed
-			if existingVariant.Quantity != newVariant.Quantity {
-				existingVariant.Quantity = newVariant.Quantity
-				isUpdated = true
+			var newOptions []VariantOption
+			for _, opt := range updated.Options {
+				newOptions = append(newOptions, VariantOption{
+					ID:          uuid.NewString(),
+					VariantID:   existing.ID,
+					OptionName:  opt.OptionName,
+					OptionValue: opt.OptionValue,
+				})
 			}
+			existing.Options = newOptions
+			isUpdated = true
 
-			// Update SKU if changed
-			if existingVariant.SKU != newVariant.SKU {
-				existingVariant.SKU = newVariant.SKU
-				isUpdated = true
-			}
-
-			// Update Options if changed
-			if newVariant.Options != nil {
-				existingVariant.Options = datatypes.JSON([]byte(newVariant.Options))
-				isUpdated = true
-			} else if existingVariant.Options == nil {
-				existingVariant.Options = datatypes.JSON([]byte("[]"))
-				isUpdated = true
-			}
-
-			// If there was any update, add it to the update list
 			if isUpdated {
-				variantsToUpdate = append(variantsToUpdate, existingVariant)
+				variantsToUpdate = append(variantsToUpdate, existing)
 			}
 		} else {
-			// If the variant is not in the new data, add it to delete list
-			variantsToDelete = append(variantsToDelete, existingVariant)
+			// Not found in updated list, mark for deletion
+			variantsToDelete = append(variantsToDelete, existing)
 		}
 	}
 
-	// Step 2: Identify new variants
-	for _, newVariant := range changedFieldValue {
-		if _, exists := existingVariantMap[newVariant.ID]; !exists {
-			// Variant does not exist, add to create list
-			newVariant.ID = uuid.New().String()
-			newVariant.PID = pid
-
-			// Handle options
-			if newVariant.Options == nil {
-				newVariant.Options = datatypes.JSON([]byte("[]")) // Empty array if no options provided
-			} else {
-				newVariant.Options = datatypes.JSON([]byte(newVariant.Options))
+	// Step 2: Identify new variants to create
+	for _, nv := range changedFieldValue {
+		if _, exists := existingVariantMap[nv.ID]; !exists {
+			newID := uuid.New().String()
+			variant := ProductVariant{
+				ID:       newID,
+				PID:      pid,
+				Name:     nv.Name,
+				SKU:      nv.SKU,
+				Price:    nv.Price,
+				Quantity: nv.Quantity,
 			}
 
-			variant := ProductVariant{
-				ID:       newVariant.ID,
-				PID:      newVariant.PID,
-				Name:     newVariant.Name,
-				Price:    newVariant.Price,
-				Quantity: newVariant.Quantity,
-				SKU:      newVariant.SKU,
-				Options:  newVariant.Options,
+			for _, opt := range nv.Options {
+				variant.Options = append(variant.Options, VariantOption{
+					ID:          uuid.NewString(),
+					VariantID:   newID,
+					OptionName:  opt.OptionName,
+					OptionValue: opt.OptionValue,
+				})
 			}
 			variantsToCreate = append(variantsToCreate, variant)
 		}
 	}
 
-	// Step 3: Perform database operations in batch
-	// Create new variants
+	// Step 3: DB operations
 	if len(variantsToCreate) > 0 {
 		if err := db.Create(&variantsToCreate).Error; err != nil {
-			return fmt.Errorf("failed to create new variants: %v", err)
+			return fmt.Errorf("failed to create variants: %v", err)
 		}
-		log.Println("Created new variants:", variantsToCreate)
 	}
 
-	// Update existing variants
 	if len(variantsToUpdate) > 0 {
-		if err := db.Save(&variantsToUpdate).Error; err != nil {
-			return fmt.Errorf("failed to update variants: %v", err)
+		for _, updatedVariant := range variantsToUpdate {
+			if err := db.Session(&gorm.Session{FullSaveAssociations: true}).Save(&updatedVariant).Error; err != nil {
+				return fmt.Errorf("failed to update variant: %v", err)
+			}
 		}
-		log.Println("Updated existing variants:", variantsToUpdate)
 	}
 
-	// Delete removed variants
 	if len(variantsToDelete) > 0 {
-		if err := db.Delete(&variantsToDelete).Error; err != nil {
+		var idsToDelete []string
+		for _, v := range variantsToDelete {
+			idsToDelete = append(idsToDelete, v.ID)
+		}
+		if err := db.Where("id IN ?", idsToDelete).Delete(&ProductVariant{}).Error; err != nil {
 			return fmt.Errorf("failed to delete variants: %v", err)
 		}
-		log.Println("Deleted variants:", variantsToDelete)
+		// Also delete options for these variants
+		if err := db.Where("variant_id IN ?", idsToDelete).Delete(&VariantOption{}).Error; err != nil {
+			return fmt.Errorf("failed to delete variant options: %v", err)
+		}
 	}
 
 	return nil
@@ -645,7 +650,6 @@ func (product *Product) UpdateProduct(db *gorm.DB, id string, changedFieldValue 
 	existingP.ShortDesc = utils.UpdateField(existingP.ShortDesc, changedFieldValue.ShortDesc).(string)
 	existingP.Price = utils.UpdateField(existingP.Price, changedFieldValue.Price).(float64)
 	existingP.Quantity = utils.UpdateField(existingP.Quantity, changedFieldValue.Quantity).(int)
-	existingP.InStock = utils.UpdateField(existingP.InStock, changedFieldValue.InStock).(bool)
 	existingP.IsFeatured = utils.UpdateField(existingP.IsFeatured, changedFieldValue.IsFeatured).(bool)
 	existingP.Rating = utils.UpdateField(existingP.Rating, changedFieldValue.Rating).(float64)
 	existingP.Tax = utils.UpdateField(existingP.Tax, changedFieldValue.Tax).(float64)
@@ -655,7 +659,6 @@ func (product *Product) UpdateProduct(db *gorm.DB, id string, changedFieldValue 
 	existingP.Length = utils.UpdateField(existingP.Length, changedFieldValue.Length).(float64)
 	existingP.Width = utils.UpdateField(existingP.Width, changedFieldValue.Width).(float64)
 	existingP.DimensionUnit = utils.UpdateField(existingP.DimensionUnit, changedFieldValue.DimensionUnit).(string)
-	existingP.IsDeleted = utils.UpdateField(existingP.IsDeleted, changedFieldValue.IsDeleted).(bool)
 	existingP.MetaTitle = utils.UpdateField(existingP.MetaTitle, changedFieldValue.MetaTitle).(string)
 	existingP.MetaDesc = utils.UpdateField(existingP.MetaDesc, changedFieldValue.MetaDesc).(string)
 	existingP.MainImage = utils.UpdateField(existingP.MainImage, changedFieldValue.MainImage).(string)
@@ -778,13 +781,13 @@ func CopyStructIntoStruct(struct1, struct2 interface{}) error {
 //}
 
 func (product *Product) UpdateProductQuantity(db *gorm.DB) error {
-	if product.Quantity <= 0 {
-		product.InStock = false
-	} else {
-		product.InStock = true
-	}
+	// if product.Quantity <= 0 {
+	// 	product.InStock = false
+	// } else {
+	// 	product.InStock = true
+	// }
 	// update quantity and in_stock
-	if err := db.Model(&product).Where("id =?", product.ID).Updates(map[string]interface{}{"quantity": product.Quantity, "in_stock": product.InStock}).Error; err != nil {
+	if err := db.Model(&product).Where("id =?", product.ID).Updates(map[string]interface{}{"quantity": product.Quantity}).Error; err != nil {
 		return err
 	}
 
@@ -886,7 +889,6 @@ func FilterProduct(db *gorm.DB, criteria FilterCriteria) ([]payloads.ProductResp
 			IsFeatured:  product.IsFeatured,
 			Tax:         product.Tax,
 			Rating:      product.Rating,
-			InStock:     product.InStock,
 		}
 	}
 
@@ -910,11 +912,11 @@ func (product *Product) GetProductById(db *gorm.DB, id string) (*Product, error)
 		return nil, err
 	}
 
-	if len(p.Images) > 0 {
-		for i := range p.Images {
-			p.Images[i].URL = CreateImageURL(p.Images[i].URL)
-		}
-	}
+	// if len(p.Images) > 0 {
+	// 	for i := range p.Images {
+	// 		p.Images[i].URL = CreateImageURL(p.Images[i].URL)
+	// 	}
+	// }
 	return &p, nil
 }
 
@@ -932,7 +934,6 @@ func CopyProductToProductResponse(product Product) payloads.ProductResponse {
 		ComparePrice:  product.ComparePrice,
 		CostPrice:     product.CostPrice,
 		Quantity:      product.Quantity,
-		InStock:       product.InStock,
 		IsFeatured:    product.IsFeatured,
 		Rating:        product.Rating,
 		Tax:           product.Tax,
@@ -943,49 +944,52 @@ func CopyProductToProductResponse(product Product) payloads.ProductResponse {
 		Width:         product.Width,
 		Height:        product.Height,
 		DimensionUnit: product.DimensionUnit,
-		StockStatus:   product.StockStatus,
 		MetaTitle:     product.MetaTitle,
 		MetaDesc:      product.MetaDesc,
 		SlugURL:       product.SlugURL,
 		MainImage:     product.MainImage,
 		CreatedAt:     product.CreatedAt,
 		UpdatedAt:     product.UpdatedAt,
-		DeletedAt:     product.DeletedAt,
 	}
 
 	// Copy Images
-	for _, img := range product.Images {
-		productResp.Images = append(productResp.Images, payloads.ProductImageResp{
-			ID:        img.ID,
-			PID:       img.PID,
-			URL:       img.URL,
-			IsMain:    img.IsMain,
-			SortOrder: img.SortOrder,
-		})
-	}
+	// for _, img := range product.Images {
+	// 	productResp.Images = append(productResp.Images, payloads.ProductImageResp{
+	// 		ID:        img.ID,
+	// 		PID:       img.PID,
+	// 		URL:       img.URL,
+	// 		IsMain:    img.IsMain,
+	// 		SortOrder: img.SortOrder,
+	// 	})
+	// }
 
-	// Copy Variants
-	for _, variant := range product.Variants {
-		productResp.Variants = append(productResp.Variants, payloads.ProductVariantResp{
-			ID:       variant.ID,
-			PID:      variant.PID,
-			SKU:      variant.SKU,
-			Name:     variant.Name,
-			Price:    variant.Price,
-			Quantity: variant.Quantity,
-			Options:  variant.Options,
-		})
-	}
+	// // Copy Variants
+	// for _, variant := range product.Variants {
+	// 	productResp.Variants = append(productResp.Variants, payloads.ProductVariantResp{
+	// 		ID:       variant.ID,
+	// 		PID:      variant.PID,
+	// 		SKU:      variant.SKU,
+	// 		Name:     variant.Name,
+	// 		Price:    variant.Price,
+	// 		Quantity: variant.Quantity,
+	// 		Options: []payloads.VariantOptionRequest{
+	// 			{
+	// 				OptionName:  variant.Options[0].OptionName,
+	// 				OptionValue: variant.Options[0].OptionValue,
+	// 			},
+	// 		},
+	// 	})
+	// }
 
-	// Copy Attributes
-	for _, attribute := range product.Attributes {
-		productResp.Attributes = append(productResp.Attributes, payloads.ProductAttributeResp{
-			ID:    attribute.ID,
-			PID:   attribute.PID,
-			Name:  attribute.Name,
-			Value: attribute.Value,
-		})
-	}
+	// // Copy Attributes
+	// for _, attribute := range product.Attributes {
+	// 	productResp.Attributes = append(productResp.Attributes, payloads.ProductAttributeResp{
+	// 		ID:    attribute.ID,
+	// 		PID:   attribute.PID,
+	// 		Name:  attribute.Name,
+	// 		Value: attribute.Value,
+	// 	})
+	// }
 
 	return productResp
 }
@@ -1003,7 +1007,6 @@ func CopyProductRequestToProduct(productReq payloads.ProductRequest) Product {
 		ComparePrice:  productReq.ComparePrice,
 		CostPrice:     productReq.CostPrice,
 		Quantity:      productReq.Quantity,
-		InStock:       productReq.InStock,
 		IsFeatured:    productReq.IsFeatured,
 		Rating:        productReq.Rating,
 		Tax:           productReq.Tax,
@@ -1014,49 +1017,50 @@ func CopyProductRequestToProduct(productReq payloads.ProductRequest) Product {
 		Width:         productReq.Width,
 		Height:        productReq.Height,
 		DimensionUnit: productReq.DimensionUnit,
-		StockStatus:   productReq.StockStatus,
 		MetaTitle:     productReq.MetaTitle,
 		MetaDesc:      productReq.MetaDesc,
 		SlugURL:       productReq.SlugURL,
 		MainImage:     productReq.MainImage,
-		CreatedAt:     productReq.CreatedAt,
-		UpdatedAt:     productReq.UpdatedAt,
-		DeletedAt:     productReq.DeletedAt,
 	}
 
 	// Images
-	for _, img := range productReq.Images {
-		product.Images = append(product.Images, ProductImage{
-			ID:        img.ID,
-			PID:       img.PID,
-			URL:       img.URL,
-			IsMain:    img.IsMain,
-			SortOrder: img.SortOrder,
-		})
-	}
+	// for _, img := range productReq.Images {
+	// 	product.Images = append(product.Images, ProductImage{
+	// 		ID:        img.ID,
+	// 		PID:       img.PID,
+	// 		URL:       img.URL,
+	// 		IsMain:    img.IsMain,
+	// 		SortOrder: img.SortOrder,
+	// 	})
+	// }
 
-	// Variants
-	for _, variant := range productReq.Variants {
-		product.Variants = append(product.Variants, ProductVariant{
-			ID:       variant.ID,
-			PID:      variant.PID,
-			SKU:      variant.SKU,
-			Name:     variant.Name,
-			Price:    variant.Price,
-			Quantity: variant.Quantity,
-			Options:  variant.Options,
-		})
-	}
+	// // Variants
+	// for _, variant := range productReq.Variants {
+	// 	product.Variants = append(product.Variants, ProductVariant{
+	// 		ID:       variant.ID,
+	// 		PID:      variant.PID,
+	// 		SKU:      variant.SKU,
+	// 		Name:     variant.Name,
+	// 		Price:    variant.Price,
+	// 		Quantity: variant.Quantity,
+	// 		Options: []VariantOption{
+	// 			{
+	// 				OptionName:  variant.Options[0].OptionName,
+	// 				OptionValue: variant.Options[0].OptionValue,
+	// 			},
+	// 		},
+	// 	})
+	// }
 
-	// Attributes
-	for _, attribute := range productReq.Attributes {
-		product.Attributes = append(product.Attributes, ProductAttribute{
-			ID:    attribute.ID,
-			PID:   attribute.PID,
-			Name:  attribute.Name,
-			Value: attribute.Value,
-		})
-	}
+	// // Attributes
+	// for _, attribute := range productReq.Attributes {
+	// 	product.Attributes = append(product.Attributes, ProductAttribute{
+	// 		ID:    attribute.ID,
+	// 		PID:   attribute.PID,
+	// 		Name:  attribute.Name,
+	// 		Value: attribute.Value,
+	// 	})
+	// }
 
 	return product
 }
@@ -1071,10 +1075,10 @@ func CopyProductImgReqToProductImg(productImgReq payloads.ProductImageRequest) P
 	}
 }
 
-func CopyEntityToEntityResp(entity ProductEntity) payloads.ProductEntityResponse {
+func CopyEntityToEntityResp(entity Entities) payloads.ProductEntityResponse {
 	return payloads.ProductEntityResponse{
 		PidEid:     entity.ID,
-		Entity:     entity.Entity.EntityName,
+		Entity:     entity.EntityName,
 		EntityType: entity.EntityType,
 		CreatedAt:  entity.CreatedAt,
 	}

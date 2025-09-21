@@ -1,7 +1,6 @@
 package payloads
 
 import (
-	"gorm.io/datatypes"
 	"time"
 )
 
@@ -47,14 +46,29 @@ type ProductRequest struct {
 	Attributes []ProductAttributeRequest `json:"attributes" gorm:"foreignKey:PID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
 
+// type ProductVariantRequest struct {
+// 	ID       string         `json:"id" gorm:"primaryKey;"`
+// 	PID      string         `json:"product_id" gorm:"index;type:varchar(36)"`
+// 	SKU      string         `json:"sku" gorm:"type:varchar(255)"`
+// 	Name     string         `json:"name" gorm:"type:varchar(255)"`
+// 	Price    float64        `json:"price" validate:"required,gt=0"`
+// 	Quantity int            `json:"quantity" validate:"required,gt=0"`
+// 	Options  datatypes.JSON `json:"options" gorm:"type:json" validate:"omitempty"` // Stored as JSON string
+// }
+
 type ProductVariantRequest struct {
-	ID       string         `json:"id" gorm:"primaryKey;"`
-	PID      string         `json:"product_id" gorm:"index;type:varchar(36)"`
-	SKU      string         `json:"sku" gorm:"type:varchar(255)"`
-	Name     string         `json:"name" gorm:"type:varchar(255)"`
-	Price    float64        `json:"price" validate:"required,gt=0"`
-	Quantity int            `json:"quantity" validate:"required,gt=0"`
-	Options  datatypes.JSON `json:"options" gorm:"type:json" validate:"omitempty"` // Stored as JSON string
+	ID       string                 `json:"id"`
+	PID      string                 `json:"pid"`
+	SKU      string                 `json:"sku"`
+	Name     string                 `json:"name"`
+	Price    float64                `json:"price"`
+	Quantity int                    `json:"quantity"`
+	Options  []VariantOptionRequest `json:"options"`
+}
+
+type VariantOptionRequest struct {
+	OptionName  string `json:"option_name"`
+	OptionValue string `json:"option_value"`
 }
 
 type ProductAttributeRequest struct {

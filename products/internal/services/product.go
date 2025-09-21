@@ -38,11 +38,11 @@ func (db *ProductService) GetProduct(w http.ResponseWriter, r *http.Request) {
 
 	var response []payloads.ProductResponse
 	for _, product := range products {
-		if len(product.Images) > 0 {
-			for i := range product.Images {
-				product.Images[i].URL = models.CreateImageURL(product.Images[i].URL)
-			}
-		}
+		// if len(product.Images) > 0 {
+		// 	for i := range product.Images {
+		// 		product.Images[i].URL = models.CreateImageURL(product.Images[i].URL)
+		// 	}
+		// }
 		res := models.CopyProductToProductResponse(product)
 		response = append(response, res)
 	}
@@ -72,11 +72,11 @@ func (db *ProductService) GetProductByID(w http.ResponseWriter, r *http.Request)
 		utils.ErrorResponseFunc(w, utils.ProductNotFoundError, http.StatusNotFound, err)
 	}
 
-	if len(product.Images) > 0 {
-		for i := range product.Images {
-			product.Images[i].URL = models.CreateImageURL(product.Images[i].URL)
-		}
-	}
+	// if len(product.Images) > 0 {
+	// 	for i := range product.Images {
+	// 		product.Images[i].URL = models.CreateImageURL(product.Images[i].URL)
+	// 	}
+	// }
 	utils.SuccessResponseFunc(w, utils.ProductFetchedSuccessfully, product, http.StatusOK)
 }
 
@@ -93,10 +93,10 @@ func (db *ProductService) GetProductByIDForCart(w http.ResponseWriter, r *http.R
 		utils.ErrorResponseFunc(w, utils.ProductNotFoundError, http.StatusNotFound, err)
 	}
 
-	if len(product.Images) > 0 {
-		for i := range product.Images {
-			product.Images[i].URL = models.CreateImageURL(product.Images[i].URL)
-		}
-	}
+	// if len(product.Images) > 0 {
+	// 	for i := range product.Images {
+	// 		product.Images[i].URL = models.CreateImageURL(product.Images[i].URL)
+	// 	}
+	// }
 	utils.SuccessResponseFunc(w, utils.ProductFetchedSuccessfully, product, http.StatusOK)
 }

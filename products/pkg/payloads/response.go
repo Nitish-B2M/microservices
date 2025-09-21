@@ -1,7 +1,6 @@
 package payloads
 
 import (
-	"gorm.io/datatypes"
 	"time"
 )
 
@@ -61,13 +60,13 @@ type ProductImageResp struct {
 
 // ProductVariantResp represents product variations
 type ProductVariantResp struct {
-	ID       string         `json:"id"`
-	PID      string         `json:"product_id"`
-	SKU      string         `json:"sku"`
-	Name     string         `json:"name"`
-	Price    float64        `json:"price"`
-	Quantity int            `json:"quantity"`
-	Options  datatypes.JSON `json:"options"`
+	ID       string                 `json:"id"`
+	PID      string                 `json:"product_id"`
+	SKU      string                 `json:"sku"`
+	Name     string                 `json:"name"`
+	Price    float64                `json:"price"`
+	Quantity int                    `json:"quantity"`
+	Options  []VariantOptionRequest `json:"options"`
 }
 
 // ProductAttributeResp represents product specifications
@@ -79,7 +78,7 @@ type ProductAttributeResp struct {
 }
 
 type EntityLabelResponse struct {
-	ProductEntityID uint   `json:"product_entity_id"`
-	Entity          string `json:"entity_name"`
-	EntityType      string `json:"entity_type"`
+	ID         uint   `json:"product_entity_id"`
+	Entity     string `json:"entity_name"`
+	EntityType string `json:"entity_type"`
 }
