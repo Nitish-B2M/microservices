@@ -1,3 +1,4 @@
+// Package payloads
 package payloads
 
 import "time"
@@ -40,8 +41,36 @@ type LoginResponse struct {
 	UpdatedAt  time.Time `json:"-"`
 }
 
+type BaseModel struct {
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type UserCreatedResponse struct {
+	UserID int `json:"user_id"`
+}
+
+type UserProfileResp struct {
+	ID         int    `json:"id"`
+	FirstName  string `json:"f_nm"`
+	LastName   string `json:"l_nm"`
+	FullName   string `json:"fl_nm"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Gender     string `json:"gender,omitempty"`
+	IsVerified bool   `json:"is_verified"`
+	IsActive   bool   `json:"is_active"`
+	BaseModel
+}
+
 type UserAuthResponse struct {
 	Token      string       `json:"token"`
 	ExpireTime int64        `json:"expire_time"`
 	User       UserResponse `json:"user"`
+}
+
+type UserLoginResponse struct {
+	Token      string          `json:"token"`
+	ExpireTime int64           `json:"expire_time"`
+	User       UserProfileResp `json:"user"`
 }

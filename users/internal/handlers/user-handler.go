@@ -4,6 +4,8 @@ package handlers
 import (
 	mw "e-commerce-backend/shared/middlewares"
 	"e-commerce-backend/users/dbs"
+	"e-commerce-backend/users/internal/controller"
+	"e-commerce-backend/users/internal/repository"
 	"e-commerce-backend/users/internal/services"
 	"net/http"
 
@@ -21,9 +23,13 @@ func UserHandler(r *mux.Router) {
 
 func AuthRoutes(r *mux.Router) {
 	userService := services.NewUser(dbs.UserDB)
+	userRepo := repository.NewUserRepo(dbs.UserDB)
+	svc := services.NewService(userRepo)
+	userController := controller.NewUserController(svc)
 
-	mw.HandlePost(r, "/login", "UserLoginValidator", userService.LoginUser)
-	mw.HandlePost(r, "/register", "", userService.CreateUser)
+	mw.HandlePost(r, "/login", "LoginUserValidator", userController.LoginUser)
+	mw.HandlePost(r, "/register", "CreateUserValidator", userController.CreateUser)
+	mw.HandlePost(r, "/email-verification", "EmailVerificationValidator", userController.VerifyUserEmail)
 	mw.HandlePost(r, "/password-reset", "", userService.ResetPassword)
 	mw.HandlePost(r, "/password-reset-request", "", userService.RequestPasswordReset)
 	mw.HandlePost(r, "/email-verification/request", "", userService.SendVerificationEmail)
@@ -35,8 +41,11 @@ func AuthRoutes(r *mux.Router) {
 
 func ProfileRoutes(r *mux.Router) {
 	userService := services.NewUser(dbs.UserDB)
+	userRepo := repository.NewUserRepo(dbs.UserDB)
+	svc := services.NewService(userRepo)
+	userController := controller.NewUserController(svc)
 
-	mw.HandlePost(r, "", "", userService.GetUserProfile, mw.AuthMiddleware)
+	mw.HandlePost(r, "", "", userController.FetchUserProfileByID, mw.AuthMiddleware)
 	mw.HandlePost(r, "/user/{id}", "", userService.GetUserProfile, mw.AuthMiddleware)
 	mw.HandlePut(r, "/update", "", userService.UpdateUser, mw.AuthMiddleware)
 }

@@ -14,29 +14,38 @@ import (
 	"gorm.io/gorm"
 )
 
+type BaseModel struct {
+	CreatedAt time.Time      `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"` // Soft delete support
+}
+
 type User struct {
-	ID         int            `json:"id" gorm:"primaryKey;autoIncrement"`
-	FirstName  string         `json:"first_name" gorm:"type:varchar(100);not null"`
-	LastName   string         `json:"last_name" gorm:"type:varchar(100);not null"`
-	Username   string         `json:"username" gorm:"type:varchar(100);not null"`
-	Email      string         `json:"email" gorm:"type:varchar(100);not null"`
-	Password   string         `json:"password" gorm:"type:varchar(255);not null"`
-	Gender     string         `json:"gender,omitempty" gorm:"type:varchar(20)"` // Consider a custom type for validation
-	IsVerified bool           `json:"is_verified" gorm:"default:false"`
-	IsDeleted  bool           `json:"is_deleted" gorm:"default:false"`
-	IsActive   bool           `json:"is_active" gorm:"default:true"`
-	CreatedAt  time.Time      `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt  time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
-	DeletedAt  gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"` // Soft delete support
+	ID         int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	FirstName  string `json:"first_name" gorm:"type:varchar(100);not null"`
+	LastName   string `json:"last_name" gorm:"type:varchar(100);not null"`
+	Username   string `json:"username" gorm:"type:varchar(100);not null"`
+	Email      string `json:"email" gorm:"type:varchar(100);not null"`
+	Password   string `json:"password" gorm:"type:varchar(255);not null"`
+	Gender     string `json:"gender,omitempty" gorm:"type:varchar(20)"` // Consider a custom type for validation
+	IsVerified bool   `json:"is_verified" gorm:"default:false"`
+	IsActive   bool   `json:"is_active" gorm:"default:true"`
+	BaseModel
 }
 
 type UserToken struct {
-	ID        int       `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID    int       `json:"user_id" gorm:"not null"`
-	Token     string    `json:"token" gorm:"unique;not null"`
-	Type      int       `json:"type" gorm:"not null"` // 1 for password_reset, 2 for email_verification
-	ExpiresAt time.Time `json:"expires_at" gorm:"not null"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID         int       `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserID     int       `json:"user_id" gorm:"not null"`
+	Token      string    `json:"token" gorm:"unique;not null"`
+	Type       int       `json:"type" gorm:"not null"` // 1 for password_reset, 2 for email_verification
+	IsVerified bool      `json:"is_verified" gorm:"default:false"`
+	ExpiresAt  time.Time `json:"expires_at" gorm:"not null"`
+	BaseModel
+}
+
+type LoginUser struct {
+	Email    string `json:"email" gorm:"type:varchar(100);not null;unique;"`
+	Password string `json:"password" gorm:"type:varchar(255);not null;"`
 }
 
 func InitUserSchema() {
@@ -79,6 +88,9 @@ func (user *User) CreateUser(db *gorm.DB) (int, error) {
 		return 0, fmt.Errorf("role %s does not exist: %w", roleName, err)
 	}
 
+	if user.Username == "" {
+		user.Username = user.Email
+	}
 	userRole := NewUserRoleService(user.ID, int(role.ID), user.Username)
 	if err := tx.Create(userRole).Error; err != nil {
 		tx.Rollback()
@@ -93,9 +105,6 @@ func (user *User) CreateUser(db *gorm.DB) (int, error) {
 }
 
 func LoggedInUser(db *gorm.DB, username, password string) (*User, error) {
-
-	fmt.Println(username, password)
-
 	var user User
 	err := db.Table("users").
 		Select("users.*").
@@ -108,7 +117,7 @@ func LoggedInUser(db *gorm.DB, username, password string) (*User, error) {
 
 	fmt.Println(user)
 
-	if ok, _ := utils.CompareHashedPassword(user.Password, password); !ok {
+	if err := utils.CompareHashedPassword(user.Password, password); err != nil {
 		return nil, errors.New("invalid username or password")
 	}
 
@@ -208,25 +217,6 @@ func (user *User) ActivateUser(db *gorm.DB, id int) error {
 	return nil
 }
 
-func (user *User) GenerateUserToken(db *gorm.DB, tokenType int) (string, error) {
-	token := utils.GenerateRandomToken()
-	expiresAt := time.Now().Add(time.Hour * 1)
-
-	resetToken := UserToken{
-		UserID:    user.ID,
-		Token:     token,
-		Type:      tokenType,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-	}
-
-	if err := db.Create(&resetToken).Error; err != nil {
-		return "", err
-	}
-
-	return token, nil
-}
-
 func (user *User) ValidateAndUseToken(db *gorm.DB, token string, tokenType int) (UserToken, error) {
 	var userToken UserToken
 
@@ -292,7 +282,6 @@ func CopyUserToUserResponse(user *User) *payloads.UserResponse {
 		Email:      user.Email,
 		Gender:     user.Gender,
 		IsVerified: user.IsVerified,
-		IsDeleted:  user.IsDeleted,
 		IsActive:   user.IsActive,
 		CreatedAt:  user.CreatedAt,
 		UpdatedAt:  user.UpdatedAt,
