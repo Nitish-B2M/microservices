@@ -29,9 +29,11 @@ var typeRegistry = map[string]reflect.Type{
 	"UserLoginUsingEmailValidator":    reflect.TypeOf(UserLoginUsingEmailValidator{}),
 	"UserLoginUsingUsernameValidator": reflect.TypeOf(UserLoginUsingUsernameValidator{}),
 	"CreateUserValidator":             reflect.TypeOf(CreateUserValidator{}),
+	"SendVerificationEmailValidator":  reflect.TypeOf(SendVerificationEmailValidator{}),
 	"EmailVerificationValidator":      reflect.TypeOf(EmailVerificationValidator{}),
 	"FetchUserProfileValidator":       reflect.TypeOf(FetchUserProfileValidator{}),
 	"LoginUserValidator":              reflect.TypeOf(LoginUserValidator{}),
+	"SwitchRoleValidator":             reflect.TypeOf(SwitchRoleValidator{}),
 }
 
 // Validator function that binds and validates JSON request bodies

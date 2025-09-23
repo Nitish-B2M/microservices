@@ -4,12 +4,12 @@ import (
 	"e-commerce-backend/shared/utils"
 	"e-commerce-backend/users/dbs"
 	"e-commerce-backend/users/internal/handlers"
-	"e-commerce-backend/users/internal/models"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/joho/godotenv"
+	"gorm.io/gorm"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -19,7 +19,7 @@ func main() {
 	dbs.InitDB()
 	defer dbs.CloseDB()
 
-	InitSchemas()
+	InitSchemas(dbs.UserDB)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -50,8 +50,9 @@ func main() {
 	}
 }
 
-func InitSchemas() {
-	models.InitUserSchema()
-	models.InitAddressSchemas()
-	models.InitUserRoleSchema()
+func InitSchemas(db *gorm.DB) {
+	// models.InitUserSchema()
+	// models.InitAddressSchemas()
+	// models.InitUserRoleSchema()
+	// repository.AutoMigrateRoleTables(db)
 }

@@ -26,14 +26,14 @@ func RoleMiddleware(db *gorm.DB, allowedRoles ...string) func(http.Handler) http
 				utils.JsonError(w, "User not authenticated", http.StatusUnauthorized, errors.New(utils.UnauthorizedError))
 				return
 			}
-			username := utils.GetUserNameIDFromContext(r)
 
-			var result payloads.ResponseRole
-			err := db.Table("user_roles").
-				Select("roles.role, user_roles.role_id, user_roles.username").
-				Joins("LEFT JOIN roles ON roles.id = user_roles.role_id").
+			var result []payloads.UserRoleInfoResp
+			err := db.
+				Table("user_roles").
+				Select("user_roles.id as user_role_id, user_roles.user_id, user_roles.is_active, roles.name as role_name").
+				Joins("JOIN roles ON roles.id = user_roles.role_id").
 				Where("user_roles.user_id = ?", userID).
-				Find(&result.Roles).Error
+				Find(&result).Error
 
 			if err != nil {
 				utils.JsonError(w, "Error fetching user and role", http.StatusInternalServerError, err)
@@ -42,8 +42,8 @@ func RoleMiddleware(db *gorm.DB, allowedRoles ...string) func(http.Handler) http
 
 			roleAllowed := false
 			for _, allowedRole := range allowedRoles {
-				for _, role := range result.Roles {
-					if role.Role == allowedRole && role.Username == username {
+				for _, role := range result {
+					if role.RoleName == allowedRole && role.IsActive {
 						roleAllowed = true
 						break
 					}
@@ -55,7 +55,7 @@ func RoleMiddleware(db *gorm.DB, allowedRoles ...string) func(http.Handler) http
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), utils.ActiveRoleNameKey, result.Roles)
+			ctx := context.WithValue(r.Context(), utils.ActiveRoleNameKey, result)
 			r = r.WithContext(ctx)
 
 			next.ServeHTTP(w, r)
