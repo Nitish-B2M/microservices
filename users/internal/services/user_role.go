@@ -51,14 +51,14 @@ func (db *RoleService) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var role models.Role
 	if err := role.CheckRoleExists(db.DB, req.Role); err != nil {
 		if strings.Contains(err.Error(), "record not found") {
-			role.Role = req.Role
+			// role.Role = req.Role
 		} else {
 			utils.JsonError(w, fmt.Sprintf(utils.RoleAlreadyExistsError, req.Role), http.StatusConflict, err)
 			return
 		}
 	}
 
-	role.Role = req.Role
+	// role.Role = req.Role
 	if err := role.CreateRole(db.DB); err != nil {
 		utils.JsonError(w, utils.RoleCreationError, http.StatusInternalServerError, err)
 		return

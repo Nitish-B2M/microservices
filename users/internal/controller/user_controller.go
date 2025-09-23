@@ -19,6 +19,14 @@ func NewUserController(svc *services.Services) *UserController {
 	return &UserController{Service: svc}
 }
 
+type UserRoleController struct {
+	RoleService *services.RoleServices
+}
+
+func NewUserRoleController(svc *services.RoleServices) *UserRoleController {
+	return &UserRoleController{RoleService: svc}
+}
+
 func (s *UserController) CreateUser(w http.ResponseWriter, r *http.Request) {
 	userInput, err := validator.GetValidatedStruct[validator.CreateUserValidator](r.Context())
 	if err != nil {
@@ -53,6 +61,22 @@ func (s *UserController) LoginUser(w http.ResponseWriter, r *http.Request) {
 	utils.SuccessResponseFunc(w, pkg_utils.UserCreatedSuccessfully, user, http.StatusOK)
 }
 
+func (s *UserController) SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	userInput, err := validator.GetValidatedStruct[validator.SendVerificationEmailValidator](r.Context())
+	if err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+
+	err = s.Service.SendEmailVerificationMail(userInput.Email)
+	if err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.SuccessResponseFunc(w, "Verification email sent successfully", nil, http.StatusOK)
+}
+
 func (s *UserController) VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
 	token, err := validator.GetValidatedStruct[validator.EmailVerificationValidator](r.Context())
 	if err != nil {
@@ -84,4 +108,47 @@ func (s *UserController) FetchUserProfileByID(w http.ResponseWriter, r *http.Req
 	}
 
 	utils.SuccessResponseFunc(w, "User profile fetched successfully", user, http.StatusOK)
+}
+
+func (ur *UserRoleController) AddAdminRole(w http.ResponseWriter, r *http.Request) {
+	userID, err := validator.GetValidatedStruct[validator.FetchUserProfileValidator](r.Context())
+	if err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+	if err := ur.RoleService.AddAdminRole(userID.ID); err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.SuccessResponseFunc(w, "Admin role added successfully", nil, http.StatusOK)
+}
+
+func (ur *UserRoleController) AddSellerRole(w http.ResponseWriter, r *http.Request) {
+	userID, err := validator.GetValidatedStruct[validator.FetchUserProfileValidator](r.Context())
+	if err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+	if err := ur.RoleService.AddSellerRole(userID.ID); err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.SuccessResponseFunc(w, "Seller role added successfully", nil, http.StatusOK)
+}
+
+func (ur *UserRoleController) SwitchRole(w http.ResponseWriter, r *http.Request) {
+	userID, err := validator.GetValidatedStruct[validator.SwitchRoleValidator](r.Context())
+	if err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusBadRequest, err)
+		return
+	}
+	userResp, err := ur.RoleService.SwitchRole(userID.UserID, userID.RoleID)
+	if err != nil {
+		utils.ErrorResponseFunc(w, err.Error(), http.StatusInternalServerError, err)
+		return
+	}
+
+	utils.SuccessResponseFunc(w, "Role switched successfully", userResp, http.StatusOK)
 }
