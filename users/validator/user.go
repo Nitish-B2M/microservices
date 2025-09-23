@@ -23,10 +23,19 @@ type CreateUserValidator struct {
 	Password  string `json:"password" validate:"required"`
 }
 
+type SendVerificationEmailValidator struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
 type EmailVerificationValidator struct {
 	Token string `json:"token" validate:"required"`
 }
 
 type FetchUserProfileValidator struct {
 	ID int `json:"id" validate:"required"`
+}
+
+type SwitchRoleValidator struct {
+	UserID int `json:"user_id" validate:"required"`
+	RoleID int `json:"role_id" validate:"required"`
 }

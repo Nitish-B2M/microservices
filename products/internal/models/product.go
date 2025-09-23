@@ -138,9 +138,9 @@ func (product *Product) CheckProductExistsById(db *gorm.DB, id string) error {
 func GetProducts(db *gorm.DB) ([]payloads.ProductResponse, error) {
 	var products []Product
 	if err := db.
-		Preload("Category.Entity").
-		Preload("Brand.Entity").
-		Preload("Tags.Entity").Preload("Images").Preload("Variants").Preload("Attributes").Where("is_deleted = ?", false).Find(&products).Error; err != nil {
+		Preload("Entities").
+		Where("is_deleted = ?", false).
+		Find(&products).Error; err != nil {
 		return nil, err
 	}
 
@@ -160,9 +160,8 @@ func GetProducts(db *gorm.DB) ([]payloads.ProductResponse, error) {
 func GetProductsForSeller(db *gorm.DB) ([]Product, error) {
 	var products []Product
 	if err := db.
-		Preload("Category.Entity").
-		Preload("Brand.Entity").
-		Preload("Tags.Entity").Preload("Images").Preload("Variants").Preload("Attributes").Where("is_deleted = ?", false).Find(&products).Error; err != nil {
+		Where("is_deleted = ?", false).
+		Find(&products).Error; err != nil {
 		return nil, err
 	}
 

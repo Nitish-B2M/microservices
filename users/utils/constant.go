@@ -7,6 +7,7 @@ const (
 	UserUpdated             = "User updated successfully"
 	UserNotFoundError       = "user not found"
 	UserNotActiveError      = "user is not active"
+	RoleNotExistsError      = "role not exists"
 )
 
 const (
