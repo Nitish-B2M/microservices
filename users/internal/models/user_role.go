@@ -11,17 +11,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type Role struct {
-	ID   uint   `json:"id" gorm:"primaryKey"`
-	Role string `json:"role" gorm:"type:varchar(50);not null"` // e.g., "admin", "seller", "user"
-}
-type UserRole struct {
-	ID       uint   `json:"id" gorm:"primaryKey"`
-	UserID   int    `json:"user_id" gorm:"not null;index"`   // Foreign Key to User
-	Username string `json:"username" gorm:"not null;unique"` // Username associated with the user
-	//Password string `json:"password" gorm:"not null"`
-	RoleID uint `json:"role_id" gorm:"not null;index"` // Foreign Key to Role
-}
+// type Role struct {
+// 	ID   uint   `json:"id" gorm:"primaryKey"`
+// 	Role string `json:"role" gorm:"type:varchar(50);not null"` // e.g., "admin", "seller", "user"
+// }
+// type UserRole struct {
+// 	ID       uint   `json:"id" gorm:"primaryKey"`
+// 	UserID   int    `json:"user_id" gorm:"not null;index"`   // Foreign Key to User
+// 	Username string `json:"username" gorm:"not null;unique"` // Username associated with the user
+// 	//Password string `json:"password" gorm:"not null"`
+// 	RoleID uint `json:"role_id" gorm:"not null;index"` // Foreign Key to Role
+// }
 
 type RoleChangeRequest struct {
 	ID            int       `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -53,13 +53,13 @@ func InitUserRoleSchema() {
 	}
 }
 
-func NewUserRoleService(userID, roleID int, username string) *UserRole {
-	return &UserRole{
-		UserID:   userID,
-		RoleID:   uint(roleID),
-		Username: username,
-	}
-}
+// func NewUserRoleService(userID, roleID int, username string) *UserRole {
+// 	return &UserRole{
+// 		UserID:   userID,
+// 		RoleID:   uint(roleID),
+// 		Username: username,
+// 	}
+// }
 
 type RoleInterface interface {
 	CheckRoleExists(db *gorm.DB, role string) (bool, error)
@@ -162,7 +162,7 @@ func (cmd *RoleChangeCommand) Execute() error {
 		}
 
 		newUserRole := UserRole{
-			UserID: cmd.UserID,
+			// UserID: cmd.UserID,
 			RoleID: role.ID,
 		}
 		if err := tx.Create(&newUserRole).Error; err != nil {

@@ -36,6 +36,16 @@ func NewService(userRepo *repository.UserRepo) *Services {
 	}
 }
 
+type RoleServices struct {
+	UserRole *repository.UserRole
+}
+
+func NewRolesService(userRole *repository.UserRole) *RoleServices {
+	return &RoleServices{
+		UserRole: userRole,
+	}
+}
+
 type Service struct {
 	DB *gorm.DB
 }
@@ -628,15 +638,58 @@ func customEmailErrorMessage(w http.ResponseWriter, err error, email string) boo
 	return false
 }
 
+// new code logic
+func responseUserProfile(user *models.User, roles []models.UserRoleInfo) *payloads.UserProfileResp {
+	var userProfile = payloads.UserProfileResp{
+		ID:         user.ID,
+		FirstName:  user.FirstName,
+		LastName:   user.LastName,
+		FullName:   user.FirstName + " " + user.LastName,
+		Email:      user.Email,
+		Username:   user.Username,
+		IsVerified: user.IsVerified,
+		IsActive:   user.IsActive,
+		Gender:     user.Gender,
+		BaseModel: payloads.BaseModel{
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+		},
+		Roles: []payloads.RoleResp{},
+	}
+
+	loggedInRole := false
+	isMarked := false
+	for _, role := range roles {
+		if (user.ActiveRoleID == role.UserRoleID) && role.IsActive {
+			loggedInRole = true
+			isMarked = true
+		} else {
+			loggedInRole = false
+		}
+		userProfile.Roles = append(userProfile.Roles, payloads.RoleResp{
+			UserRoleID: role.UserRoleID,
+			RoleName:   role.RoleName,
+			IsActive:   role.IsActive,
+			IsCurrent:  loggedInRole,
+		})
+	}
+
+	if len(userProfile.Roles) > 0 && !loggedInRole && !isMarked {
+		userProfile.Roles[0].IsCurrent = true
+	}
+
+	return &userProfile
+}
+
 func (s *Services) CreateUser(ctx context.Context, data validator.CreateUserValidator) (*models.User, error) {
 	// Check if the email already exists
-	// exists, err := s.IsEmailExists(ctx, data.Email)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// if exists {
-	// 	return nil, errors.New(utils.EmailAlreadyExistsError)
-	// }
+	exists, err := s.IsEmailExists(ctx, data.Email)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, errors.New(utils.EmailAlreadyExistsError)
+	}
 
 	if err := utils.CheckPasswordSecurity(data.Password); err != nil {
 		return nil, err
@@ -654,15 +707,26 @@ func (s *Services) CreateUser(ctx context.Context, data validator.CreateUserVali
 		Password:  hashedPassword,
 	}
 
-	// createdUser, err := s.UserRepo.CreateUser(user)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	createdUser, err := s.UserRepo.CreateUser(user)
+	if err != nil {
+		return nil, err
+	}
+
+	// attach default role
+	role, err := s.UserRepo.AttachDefaultRole(createdUser)
+	if err != nil {
+		return nil, err
+	}
+
+	// update user active role
+	if err := s.UserRepo.UpdateUserActiveRole(createdUser, *role); err != nil {
+		return nil, err
+	}
 
 	// Send email
 	templateData := pkg_utils.UserCreationTD{
-		Email:    user.Email,
-		FullName: user.FirstName + " " + user.LastName,
+		Email:    createdUser.Email,
+		FullName: createdUser.FirstName + " " + createdUser.LastName,
 	}
 
 	template, err := pkg_utils.GetUserCreatedTemplate(templateData)
@@ -670,20 +734,25 @@ func (s *Services) CreateUser(ctx context.Context, data validator.CreateUserVali
 		return nil, err
 	}
 
-	if err := utils.SendEmail(user.Email, pkg_utils.SubjectUserCreated, template); err != nil {
+	if err := utils.SendEmail(createdUser.Email, pkg_utils.SubjectUserCreated, template); err != nil {
 		return nil, err
 	}
 
 	// Send verification email
-	if err := s.SendVerificationEmail(user); err != nil {
+	if err := s.SendVerificationEmail(createdUser); err != nil {
 		return nil, err
 	}
 
-	return user, nil
+	return createdUser, nil
 }
 
 func (s *Services) IsEmailExists(ctx context.Context, email string) (bool, error) {
 	return s.UserRepo.IsEmailExists(email)
+}
+
+func (s *Services) AttachDefaultRole(user *models.User) error {
+	_, err := s.UserRepo.AttachDefaultRole(user)
+	return err
 }
 
 func (s *Services) SendVerificationEmail(user *models.User) error {
@@ -714,6 +783,15 @@ func (s *Services) SendVerificationEmail(user *models.User) error {
 	return nil
 }
 
+func (s *Services) SendEmailVerificationMail(email string) error {
+	user, err := s.UserRepo.GetUserByEmail(email)
+	if err != nil {
+		return err
+	}
+
+	return s.SendVerificationEmail(user)
+}
+
 func (s *Services) VerifyToken(token string, tokenType int) (*models.UserToken, error) {
 	userToken, err := s.UserRepo.VerifyToken(token, constants.EmailVerificationType)
 	if err != nil {
@@ -733,12 +811,20 @@ func (s *Services) LoginUser(ctx context.Context, data validator.LoginUserValida
 	if err != nil {
 		return nil, err
 	}
+
 	if err := utils.CompareHashedPassword(dbUser.Password, data.Password); err != nil {
 		return nil, err
 	}
 
 	expireTime := time.Now().Add(time.Hour * 24).Unix()
-	token, err := utils.GenerateJWT(dbUser.ID, user.Email, "user.Username", expireTime)
+	token, err := utils.GenerateJWT(dbUser.ID, user.Email, "", expireTime)
+	if err != nil {
+		return nil, err
+	}
+
+	userRole := repository.NewUserRole(s.UserRepo.DB)
+	ur := NewRolesService(userRole)
+	roles, err := ur.UserRole.FetchAllRoles(dbUser.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -746,21 +832,7 @@ func (s *Services) LoginUser(ctx context.Context, data validator.LoginUserValida
 	authResponse := payloads.UserLoginResponse{
 		Token:      token,
 		ExpireTime: expireTime,
-		User: payloads.UserProfileResp{
-			ID:         dbUser.ID,
-			FirstName:  dbUser.FirstName,
-			LastName:   dbUser.LastName,
-			FullName:   dbUser.FirstName + " " + dbUser.LastName,
-			Email:      dbUser.Email,
-			Username:   dbUser.Username,
-			IsVerified: dbUser.IsVerified,
-			IsActive:   dbUser.IsActive,
-			Gender:     dbUser.Gender,
-			BaseModel: payloads.BaseModel{
-				CreatedAt: dbUser.CreatedAt,
-				UpdatedAt: dbUser.UpdatedAt,
-			},
-		},
+		User:       *responseUserProfile(dbUser, roles),
 	}
 	return &authResponse, nil
 }
@@ -770,5 +842,48 @@ func (s *Services) FetchUserProfileByID(userID int) (*payloads.UserProfileResp, 
 	if err != nil {
 		return nil, err
 	}
-	return user, nil
+
+	userRole := repository.NewUserRole(s.UserRepo.DB)
+	ur := NewRolesService(userRole)
+	roles, err := ur.UserRole.FetchAllRoles(user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	userResp := *responseUserProfile(user, roles)
+	return &userResp, nil
+}
+
+func (s *RoleServices) AddAdminRole(userID int) error {
+	return s.UserRole.AddAdminRole(userID)
+}
+
+func (s *RoleServices) AddSellerRole(userID int) error {
+	return s.UserRole.AddSellerRole(userID)
+}
+
+func (s *RoleServices) SwitchRole(userID int, roleID int) (*payloads.UserProfileResp, error) {
+	user, roles, err := s.UserRole.SwitchRole(userID, roleID)
+	if err != nil {
+		return nil, err
+	}
+
+	// role
+	role := models.UserRoleInfo{}
+	for _, r := range roles {
+		if r.UserRoleID == roleID {
+			role.UserRoleID = r.UserRoleID
+			role.RoleName = r.RoleName
+		}
+	}
+
+	// update user active role
+	newRepo := repository.NewUserRepo(s.UserRole.DB)
+	u := NewService(newRepo)
+	if err := u.UserRepo.UpdateUserActiveRole(user, role); err != nil {
+		return nil, err
+	}
+
+	userResp := *responseUserProfile(user, roles)
+	return &userResp, nil
 }

@@ -3,7 +3,6 @@ package repository
 
 import (
 	"e-commerce-backend/users/internal/models"
-	"e-commerce-backend/users/pkg/payloads"
 	pkg_utils "e-commerce-backend/users/utils"
 	"errors"
 	"time"
@@ -72,11 +71,73 @@ func (repo *UserRepo) checkUserByEmail(email string) error {
 	return nil
 }
 
+func (repo *UserRepo) GetUserByEmail(email string) (*models.User, error) {
+	if err := repo.checkUserByEmail(email); err != nil {
+		return nil, err
+	}
+
+	var user models.User
+	if err := repo.DB.Where("email = ?", email).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (repo *UserRepo) CheckRoleExists(roleName string) (models.Role, error) {
+	var role models.Role
+	err := repo.DB.Where("name = ?", roleName).First(&role).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return role, errors.New(pkg_utils.RoleNotExistsError)
+		}
+		return role, err
+	}
+	return role, nil
+}
+
+func (repo *UserRepo) AttachDefaultRole(user *models.User) (*models.UserRoleInfo, error) {
+	role, err := repo.CheckRoleExists("customer")
+	if err != nil {
+		return nil, err
+	}
+
+	err = repo.DB.Model(user).Association("Roles").Append(&role)
+	if err != nil {
+		return nil, err
+	}
+
+	roleInfo := models.UserRoleInfo{}
+	err = repo.DB.
+		Table("user_roles").
+		Select("user_roles.id").
+		Joins("JOIN roles ON roles.id = user_roles.role_id").
+		Where("user_roles.user_id = ? AND roles.name = ?", user.ID, role.Name).
+		First(&roleInfo).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &roleInfo, nil
+}
+
+func (repo *UserRepo) UpdateUserActiveRole(user *models.User, role models.UserRoleInfo) error {
+	updateRole := map[string]interface{}{"active_role_id": role.UserRoleID, "active_role": role.RoleName}
+	if err := repo.DB.Model(user).Updates(updateRole).Error; err != nil {
+		return err
+	}
+
+	user.ActiveRoleID = role.UserRoleID
+	user.ActiveRole = role.RoleName
+
+	return nil
+}
+
 func (repo *UserRepo) SendVerificationEmail(user *models.User) error {
 	return nil
 }
 
-func (repo *UserRepo) FetchUserProfileByID(id int) (*payloads.UserProfileResp, error) {
+func (repo *UserRepo) FetchUserProfileByID(id int) (*models.User, error) {
 	val, err := repo.IsUserExists(id)
 	if err != nil {
 		return nil, err
@@ -84,10 +145,11 @@ func (repo *UserRepo) FetchUserProfileByID(id int) (*payloads.UserProfileResp, e
 		return nil, errors.New(pkg_utils.UserNotFoundError)
 	}
 
-	var user payloads.UserProfileResp
+	var user models.User
 	if err := repo.DB.Where("id = ?", id).First(&user).Error; err != nil {
 		return nil, err
 	}
+
 	return &user, nil
 }
 
@@ -113,13 +175,14 @@ func (repo *UserRepo) StoreToken(userID int, token string, tokenType int) error 
 
 func (repo *UserRepo) VerifyToken(token string, tokenType int) (*models.UserToken, error) {
 	var userToken models.UserToken
+	var user models.User
 
-	if err := repo.DB.Where("token = ? AND type = ? AND expires_at > ? AND is_verified = ?",
+	if err := repo.DB.Where("token = ? AND type = ? AND expires_at > ? AND is_verified = ? AND deleted_at is not null",
 		token, tokenType, time.Now(), true).First(&userToken).Error; err == nil {
 		return nil, pkg_utils.ErrTokenAlreadyVerified
 	}
 
-	if err := repo.DB.Where("token = ? AND type = ? AND expires_at > ? AND is_verified = ?",
+	if err := repo.DB.Where("token = ? AND type = ? AND expires_at > ? AND is_verified = ? AND deleted_at is null",
 		token, tokenType, time.Now(), false).First(&userToken).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, pkg_utils.ErrTokenNotFound
@@ -127,7 +190,21 @@ func (repo *UserRepo) VerifyToken(token string, tokenType int) (*models.UserToke
 		return nil, err
 	}
 
-	if err := repo.DB.Model(&userToken).Where("token = ?", token).Update("is_verified", true).Error; err != nil {
+	userToken.IsVerified = true
+	if err := repo.DB.Save(&userToken).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, pkg_utils.ErrTokenNotFound
+		}
+		return nil, err
+	}
+
+	// Soft delete the token
+	if err := repo.DB.Delete(&userToken).Error; err != nil {
+		return nil, err
+	}
+
+	// Mark user as verified
+	if err := repo.DB.Model(&user).Where("id = ?", userToken.UserID).Update("is_verified", true).Error; err != nil {
 		return nil, err
 	}
 

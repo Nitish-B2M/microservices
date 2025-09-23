@@ -14,6 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
+type BaseModelNoSoftDelete struct {
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
 type BaseModel struct {
 	CreatedAt time.Time      `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
@@ -21,16 +26,20 @@ type BaseModel struct {
 }
 
 type User struct {
-	ID         int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	FirstName  string `json:"first_name" gorm:"type:varchar(100);not null"`
-	LastName   string `json:"last_name" gorm:"type:varchar(100);not null"`
-	Username   string `json:"username" gorm:"type:varchar(100);not null"`
-	Email      string `json:"email" gorm:"type:varchar(100);not null"`
-	Password   string `json:"password" gorm:"type:varchar(255);not null"`
-	Gender     string `json:"gender,omitempty" gorm:"type:varchar(20)"` // Consider a custom type for validation
-	IsVerified bool   `json:"is_verified" gorm:"default:false"`
-	IsActive   bool   `json:"is_active" gorm:"default:true"`
+	ID           int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	FirstName    string `json:"first_name" gorm:"type:varchar(100);not null"`
+	LastName     string `json:"last_name" gorm:"type:varchar(100);not null"`
+	Username     string `json:"username" gorm:"type:varchar(100);not null"`
+	Email        string `json:"email" gorm:"type:varchar(100);not null"`
+	Password     string `json:"password" gorm:"type:varchar(255);not null"`
+	Gender       string `json:"gender,omitempty" gorm:"type:varchar(20)"`
+	IsVerified   bool   `json:"is_verified" gorm:"default:false"`
+	IsActive     bool   `json:"is_active" gorm:"default:true"`
+	ActiveRoleID int    `json:"active_role_id,omitempty" gorm:"type:int"`
+	ActiveRole   string `json:"active_role,omitempty" gorm:"type:varchar(50)"`
 	BaseModel
+
+	Roles []Role `json:"roles" gorm:"many2many:user_roles"`
 }
 
 type UserToken struct {
@@ -91,11 +100,11 @@ func (user *User) CreateUser(db *gorm.DB) (int, error) {
 	if user.Username == "" {
 		user.Username = user.Email
 	}
-	userRole := NewUserRoleService(user.ID, int(role.ID), user.Username)
-	if err := tx.Create(userRole).Error; err != nil {
-		tx.Rollback()
-		return 0, err
-	}
+	// userRole := NewUserRoleService(user.ID, int(role.ID), user.Username)
+	// if err := tx.Create(userRole).Error; err != nil {
+	// 	tx.Rollback()
+	// 	return 0, err
+	// }
 
 	if err := tx.Commit().Error; err != nil {
 		tx.Rollback()
@@ -135,7 +144,7 @@ func (user *User) GetUserUsingUsername(db *gorm.DB, username string) (*payloads.
 		return nil, fmt.Errorf("error fetching user and role: %w", err)
 	}
 
-	userRes, err := user.GetUserByID(db, result.ActiveRole.UserId)
+	userRes, err := user.GetUserByID(db, result.ActiveRole.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching user: %w", err)
 	}
